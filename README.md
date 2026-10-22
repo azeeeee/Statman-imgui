@@ -1,72 +1,106 @@
-![Logo](http://i.imgur.com/lSCUfwF.png)
+# Statman - Unofficial HM3 In-Game Overlay Fork
+Not affiliated with or endorsed by OrfeasZ or IO Interactive.
 
-### Introduction
+An attempt of improving the in-game overlay from the original OrfeasZ's version.
 
-Statman is a configuration-free and easy-to-use live statistics tracking program for games.
+Heavily AI-Assisted code. Just like this README. 
 
-It has been built from the ground up to allow for easy tracking integration of different games and engines, while abstracting the underlying complexity from the end-user. Additionally, Statman features two themes (a light one and a dark one), switcheable by double-clicking the Statman logo, and update-checking features to ensure that your version is always up-to-date.
+Don't be afraid to call it a vibe coded slop, because it is, in fact, a vibe coded slop. But it does its job. 
 
-Statman is currently in early stages of development, so there could still be issues and bugs. If you encounter any issues please feel free to report them on the [Issue Tracker](https://github.com/OrfeasZ/Statman/issues).
-
-### Supported Games & Features
-
- - Hitman: Blood Money (HM3)
-   - Live tracking of the following statistics:
-     - Witnesses
-     - Bodies Found
-     - Covers Blown
-     - Caught on Camera
-     - Frisk Failed
-     - Items Left on Level
-     - Enemies Killed
-     - Enemies Wounded
-     - Policemen Killed
-     - Policemen Wounded
-     - Innocents Killed
-     - Innocents Wounded
-   - Live tracking of in-game level time
-   - Live tracking of the current level and state
-   - Live tracking of the current level rating
-   - Live tracking of the current difficulty setting
-   - Ability to enable and disable cheats
-   - Ability to enable unlimited saving/loading for all difficulties
-   - Hitman 2016 Mode (Experimental)
-   - In-game tracker overlay
-
-### Hitman Blood Money: 2016 Mode
-
-This is an experimental mode that adds support for custom starting locations with alternative disguises. You can find more info about how it works and how to configure it [here](/HM3_2016.md).
-
-### Screenshots
-
-![Screenshots](http://i.imgur.com/rOowYzX.png)
-
-### Download
-
- - [Version 1.4.0.0](https://github.com/OrfeasZ/Statman/releases/download/v1.4.0.0/Statman_1.4.0.0.zip) (Latest)
- - [Version 1.3.3.0](https://github.com/OrfeasZ/Statman/releases/download/v1.3.3.0/Statman_1.3.3.0.zip)
- - [Version 1.3.2.0](https://github.com/OrfeasZ/Statman/releases/download/v1.3.2.0/Statman_1.3.2.0.zip)
- - [Version 1.3.1.0](https://github.com/OrfeasZ/Statman/releases/download/v1.3.1.0/Statman_1.3.1.0.zip)
- - [Version 1.3.0.0](https://github.com/OrfeasZ/Statman/releases/download/v1.3.0.0/Statman_1.3.0.0.zip)
- - [Version 1.2.0.0](https://github.com/OrfeasZ/Statman/releases/download/v1.2.0.0/Statman_1.2.0.0.zip)
- - [Version 1.1.0.0](https://github.com/OrfeasZ/Statman/releases/download/v1.1.0.0/Statman_1.1.0.0.zip)
- - [Version 1.0.0.0](https://github.com/OrfeasZ/Statman/releases/download/v1.0.0.0/Statman_1.0.0.0.zip)
+Potentially this fork might have more features in the future. 
 
 
-### Usage
+Forked from: https://github.com/OrfeasZ/Statman
 
-In order to use Statman you simply need to extract the binaries from the downloaded archive (or compile it yourself), and run **Statman.exe**. It is recommended to start Statman before starting the game in order to have full tracking capabilities from the beginning.
+Original License:
 
-Game-specific features can be accessed by right-clicking on the statman logo while the game is running.
+https://github.com/OrfeasZ/Statman/blob/master/LICENSE
 
-### Building
+## What's Different
 
-Clone the git repo and ensure all submodules are checked out by running:
+This fork keeps Statman's original HM3 stat tracking and rating logic, but replaces the in-game display with a redesigned ImGui/D3D9 overlay.
+![Overlay](https://i.imgur.com/IO6nWWR.png)
 
-```sh
-git submodule update --init --recursive
+![Overlay Menu](https://i.imgur.com/AwFam8K.png)
+
+- The HUD is split into movable panels: left stats, right stats, rating, timer, and level info.
+- Added a top-left toolbar that appears when cursor capture is enabled.
+- Added an in-game Overlay Editor and Settings window for visibility, fonts, sizes, colors, and row spacing.
+- Panels can be repositioned while cursor capture is active. Positions persist between sessions. `INSERT` toggles cursor capture. 
+- Added per-element visibility toggles and optional highlighting for bad stats.
+- Overlay settings are stored in `%APPDATA%\Statman\HM3Overlay.json` and created automatically on first use.
+- Fonts are loaded from the Windows Fonts folder.
+- Hitman 2016 debug information is now rendered through the ImGui overlay.
+
+## Requirements
+
+- Windows with DirectX 9 support
+- Hitman: Blood Money (Overlay was tested only on Steam version) 
+- .NET Framework 4.8
+- Administrator privileges
+
+To build from source:
+- Visual Studio 2022 with the **Desktop development with C++** and **.NET desktop development** workloads
+- DirectX SDK (June 2010)
+- Git
+- NuGet package restore
+
+## Build Instructions
+
+Clone the repository with submodules:
+
+```bat
+git clone --recursive https://github.com/azeeeee/Statman-imgui.git
+cd Statman-imgui
 ```
 
-Make sure that the [DirectX SDK](https://www.microsoft.com/en-us/download/details.aspx?id=6812) is installed.
+If you already cloned it:
+git submodule update --init --recursive
+ImGui is vendored directly in this fork. MinHook is still included as a submodule.
+1. Open Statman.sln in Visual Studio 2022.
+2. Restore NuGet packages if Visual Studio does not do it automatically.
+3. Select Release | x86. This platform is required for the native HM3 module.
+4. Build the whole solution, not only Statman.csproj, because the native project uses $(SolutionDir).
+5. The output is written to _build\bin\Release\, including Statman.exe and HM3.dll.
 
-Then open `Statman.sln` in Visual Studio 2022, select the `x86` platform target for using Statman with Hitman Blood Money, or the `x64` platform target for using it with Hitman 2016+, and press `|> Start`.
+The DirectX SDK is only required when building the native HM3 module. It is not required to run the compiled overlay.
+
+
+## Usage
+1. Start Hitman: Blood Money.
+2. Run `Statman.exe` as administrator. Currently it is recommended to start it AFTER launching Hitman: Blood Money.
+3. Make sure the HM3 Overlay option is enabled in Statman.
+4. Press `INSERT` in-game to toggle cursor capture.
+5. While cursor capture is active, use the top-left toolbar to open the Overlay Editor or Settings.
+6. Drag HUD panels to reposition them. Changes apply immediately.
+7. Press `INSERT` again to release the cursor and save the overlay settings.
+
+If the overlay does not appear, check that Statman is running as administrator, the overlay option is enabled, the game is running, and `HM3.dll` is next to `Statman.exe`.
+
+## Configuration Paths
+- statman.json — stored next to Statman.exe. Contains application options such as dark mode and HM3 features like cheats, unlimited saves, 2016 mode, debug mode, and the overlay toggle.
+- %APPDATA%\Statman\HM3Overlay.json — contains overlay visibility, panel positions, fonts, sizes, and colors. It is created automatically on first overlay initialization. Delete it to reset, or use the editor's reset buttons.
+- HM3_locations.json — used by the inherited Hitman 2016 mode. It is not required for normal HM3 tracking.
+External edits to HM3Overlay.json are read when the overlay initializes. Restart the game to reload them.
+
+## Known Limitations
+- This fork is focused on Hitman: Blood Money. The inherited Hitman 2016 mode and other engines have not been tested with the redesigned overlay.
+- Administrator privileges are required for injection.
+- There might be two mouse cursor appearing while trying to move around the in-game overlay. It's better to customize the overlay whenever you're playing the level.
+- Currently the stats on the overlay are also being shown even when the player is not on the level.
+- External edits to the overlay JSON require restarting the game.
+- Other mods or overlays may conflict with injection or rendering.
+- This is an unofficial fork. Please do not report fork-specific issues to the original Statman project.
+
+## Credits
+- OrfeasZ - Orfeas Zafeiris — original Statman project.
+- ReGlacier - for ReHitman project, which was also helpful for this fork.
+- ocornut and contributors — Dear ImGui.
+- TsudaKageyu — MinHook.
+- secana — PeNet.
+- James Newton-King — Newtonsoft.Json.
+- Microsoft — .NET Framework and DirectX SDK.
+
+This fork is based on Statman by Orfeas Zafeiris and is licensed under the MIT license. See LICENSE for details. It is not affiliated with or endorsed by the original author or IO Interactive.
+
+Parts of this fork were developed with AI-assisted tooling and reviewed by a human.
