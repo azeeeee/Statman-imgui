@@ -10,6 +10,8 @@ class HM3Stats;
 class ZSysInterface;
 class ZHM3GameData;
 class ZSWScene;
+class ZActionManager;
+class ZSysInputWintel;
 enum ALLOCSEQUENCESTATUS : uint32_t;
 struct SGeomTypeCount;
 
@@ -68,5 +70,7 @@ public:
 	ZHM3GameData** g_pGameData = nullptr;
 	bool* CConfiguration__m_bCheatsEnabled = nullptr;
 	ZSysInterface** g_pSysInterface = nullptr;
+	void** g_pActionManager = nullptr;
+	void** g_pSysInput = nullptr;
 	ZGEOM** ZLIST__m_TrackLinkObjectsInstance = nullptr;
 };

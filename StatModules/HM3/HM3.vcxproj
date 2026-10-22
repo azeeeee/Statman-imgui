@@ -59,14 +59,14 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;HM3_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
-      <AdditionalIncludeDirectories>$(ProjectDir)Src;$(SolutionDir)External\include;$(SolutionDir)Libraries\Pipeman\Include;$(SolutionDir)_build\lib\$(Configuration)\$(Platform);$(SolutionDir)External\modules\minhook\include;$(SolutionDir)Libraries\StatmanCommons\Include;$(DXSDK_DIR)Include</AdditionalIncludeDirectories>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+<AdditionalIncludeDirectories>$(ProjectDir)Src;$(SolutionDir)External\include;$(SolutionDir)Libraries\Pipeman\Include;$(SolutionDir)_build\lib\$(Configuration)\$(Platform);$(SolutionDir)External\modules\minhook\include;$(SolutionDir)External\modules\imgui;$(SolutionDir)External\modules\imgui\backends;$(SolutionDir)Libraries\StatmanCommons\Include;C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+<RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)External\lib;$(SolutionDir)_build\lib\$(Configuration)\$(Platform);$(SolutionDir)lib\$(Configuration);$(DXSDK_DIR)Lib\x86</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)External\lib;$(SolutionDir)_build\lib\$(Configuration)\$(Platform);$(SolutionDir)lib\$(Configuration);$(DXSDK_DIR)Lib\x86;C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Lib\x86</AdditionalLibraryDirectories>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
       <AdditionalDependencies>Pipeman.lib;libMinHook.x86.lib;StatmanCommons.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
@@ -79,7 +79,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;HM3_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)Src;$(SolutionDir)External\include;$(SolutionDir)Libraries\Pipeman\Include;$(SolutionDir)_build\lib\$(Configuration)\$(Platform);$(SolutionDir)External\modules\minhook\include;$(SolutionDir)Libraries\StatmanCommons\Include;$(DXSDK_DIR)Include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Src;$(SolutionDir)External\include;$(SolutionDir)Libraries\Pipeman\Include;$(SolutionDir)_build\lib\$(Configuration)\$(Platform);$(SolutionDir)External\modules\minhook\include;$(SolutionDir)External\modules\imgui;$(SolutionDir)External\modules\imgui\backends;$(SolutionDir)Libraries\StatmanCommons\Include;C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Include</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
@@ -88,12 +88,15 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalLibraryDirectories>$(SolutionDir)External\lib;$(SolutionDir)_build\lib\$(Configuration)\$(Platform);$(SolutionDir)lib\$(Configuration);$(DXSDK_DIR)Lib\x86</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)External\lib;$(SolutionDir)_build\lib\$(Configuration)\$(Platform);$(SolutionDir)lib\$(Configuration);$(DXSDK_DIR)Lib\x86;C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Lib\x86</AdditionalLibraryDirectories>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
       <AdditionalDependencies>Pipeman.lib;libMinHook.x86.lib;StatmanCommons.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="$(SolutionDir)External\modules\imgui\imgui.h" />
+    <ClInclude Include="$(SolutionDir)External\modules\imgui\backends\imgui_impl_dx9.h" />
+    <ClInclude Include="$(SolutionDir)External\modules\imgui\backends\imgui_impl_win32.h" />
     <ClInclude Include="Src\HM3\HM3Module.h" />
     <ClInclude Include="Src\HM3\HM3Functions.h" />
     <ClInclude Include="Src\HM3\HM3Hooks.h" />
@@ -111,6 +114,12 @@
     <ClInclude Include="Src\targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="$(SolutionDir)External\modules\imgui\imgui.cpp" />
+    <ClCompile Include="$(SolutionDir)External\modules\imgui\imgui_draw.cpp" />
+    <ClCompile Include="$(SolutionDir)External\modules\imgui\imgui_tables.cpp" />
+    <ClCompile Include="$(SolutionDir)External\modules\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="$(SolutionDir)External\modules\imgui\backends\imgui_impl_dx9.cpp" />
+    <ClCompile Include="$(SolutionDir)External\modules\imgui\backends\imgui_impl_win32.cpp" />
     <ClCompile Include="Src\HM3\Overlay.cpp" />
     <ClCompile Include="Src\Entry.cpp" />
     <ClCompile Include="Src\HM3\HM3Module.cpp" />
@@ -126,3 +135,5 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
+
+

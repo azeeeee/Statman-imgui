@@ -1,26 +1,41 @@
-﻿using Newtonsoft.Json;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace Statman.Util
 {
+    [DataContract]
     internal class HM3Options
     {
+        [DataMember]
         public bool Cheats { get; set; } = false;
+
+        [DataMember]
         public bool UnlimitedSaves { get; set; } = false;
+
+        [DataMember]
         public bool Hitman2016Mode { get; set; } = false;
+
+        [DataMember]
         public bool Hitman2016DebugMode { get; set; } = false;
+
+        [DataMember]
         public bool Overlay { get; set; } = true;
     }
 
+    [DataContract]
     internal class StatmanOptions
     {
+        [DataMember]
         public bool DarkMode { get; set; } = false;
+
+        [DataMember]
         public HM3Options HM3 { get; set; } = new HM3Options();
     }
 
@@ -42,7 +57,20 @@ namespace Statman.Util
                 if (File.Exists(m_OptionsPath))
                 {
                     var s_Json = File.ReadAllText(m_OptionsPath);
-                    return JsonConvert.DeserializeObject<StatmanOptions>(s_Json);
+
+                    using (var s_Stream = new MemoryStream(Encoding.UTF8.GetBytes(s_Json)))
+                    {
+                        var s_Serializer = new DataContractJsonSerializer(typeof (StatmanOptions));
+                        var s_Options = s_Serializer.ReadObject(s_Stream) as StatmanOptions;
+
+                        if (s_Options == null)
+                            return new StatmanOptions();
+
+                        if (s_Options.HM3 == null)
+                            s_Options.HM3 = new HM3Options();
+
+                        return s_Options;
+                    }
                 }
             }
             catch (Exception) 
@@ -57,8 +85,11 @@ namespace Statman.Util
         {
             try
             {
-                var s_Json = JsonConvert.SerializeObject(m_Options, Formatting.Indented);
-                File.WriteAllText(m_OptionsPath, s_Json);
+                using (var s_Stream = File.Create(m_OptionsPath))
+                {
+                    var s_Serializer = new DataContractJsonSerializer(typeof (StatmanOptions));
+                    s_Serializer.WriteObject(s_Stream, m_Options);
+                }
             }
             catch (Exception)
             {

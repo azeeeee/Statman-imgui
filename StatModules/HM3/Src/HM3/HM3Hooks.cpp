@@ -99,13 +99,16 @@ bool HM3Hooks::HookD3D9()
 		return false;
 	}
 
-	// Get the address to EndScene method.
+	// Get the addresses to the EndScene and Reset methods.
 	const auto* s_VTable = *reinterpret_cast<uintptr_t**>(s_Device);
 	const intptr_t s_EndSceneOffset = 168;
+	const intptr_t s_ResetOffset = 64;
 	const auto s_EndSceneAddress = s_VTable[s_EndSceneOffset / sizeof(uintptr_t)];
+	const auto s_ResetAddress = s_VTable[s_ResetOffset / sizeof(uintptr_t)];
 
-	// Install the hook.
+	// Install the hooks.
 	DECLARE_OFFSET_HOOK(IDirect3DDevice9__EndScene, s_EndSceneAddress);
+	DECLARE_OFFSET_HOOK(IDirect3DDevice9__Reset, s_ResetAddress);
 
 	// Clean things up.
 	DestroyWindow(s_Window);
@@ -122,11 +125,14 @@ void HM3Hooks::Uninstall()
 	
 	m_Installed = false;
 
+	Overlay_Shutdown();
+
 	REMOVE_HOOK(ZScene_Load)
 	REMOVE_HOOK(ZHM3LevelControl_FrameUpdate)
 	REMOVE_HOOK(ZHM3LevelControl_MissionCompleted2)
 	REMOVE_HOOK(ZLimitSaves_Click)
 	REMOVE_HOOK(IDirect3DDevice9__EndScene)
+	REMOVE_HOOK(IDirect3DDevice9__Reset)
 	
 	if (MH_Uninitialize() != MH_OK)
 		Log("Failed to uninitialize MinHook.\n");

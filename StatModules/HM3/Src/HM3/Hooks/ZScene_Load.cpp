@@ -4,6 +4,7 @@
 #include <HM3/Structs/ZHM3GameData.h>
 #include <HM3/Structs/ZHM3Actor.h>
 #include <HM3/HM3Functions.h>
+#include <algorithm>
 
 #include <Pipeman.h>
 
