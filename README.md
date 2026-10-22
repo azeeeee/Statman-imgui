@@ -55,7 +55,9 @@ cd Statman-imgui
 ```
 
 If you already cloned it:
-git submodule update --init --recursive
+
+`git submodule update --init --recursive`
+
 ImGui is vendored directly in this fork. MinHook is still included as a submodule.
 1. Open Statman.sln in Visual Studio 2022.
 2. Restore NuGet packages if Visual Studio does not do it automatically.
