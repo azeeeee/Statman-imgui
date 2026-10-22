@@ -90,6 +90,7 @@ External edits to HM3Overlay.json are read when the overlay initializes. Restart
 - Administrator privileges are required for injection.
 - There might be two mouse cursor appearing while trying to move around the in-game overlay. It's better to customize the overlay whenever you're playing the level.
 - Currently the stats on the overlay are also being shown even when the player is not on the level.
+- You might need to use a higher resolution (16:9, 1600x900 preferred) to see all the options from the overlay. 
 - External edits to the overlay JSON require restarting the game.
 - Other mods or overlays may conflict with injection or rendering.
 - This is an unofficial fork. Please do not report fork-specific issues to the original Statman project.
