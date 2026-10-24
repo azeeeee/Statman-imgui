@@ -15,10 +15,6 @@ Forked from: https://github.com/OrfeasZ/Statman
 
 This fork keeps Statman's original HM3 stat tracking and rating logic, but replaces the in-game display with a redesigned ImGui/D3D9 overlay.
 
-![Overlay](https://i.imgur.com/6h4o83K.jpeg)
-
-![Overlay Menu](https://i.imgur.com/cHSAuXc.jpeg)
-
 - The HUD is split into movable panels: left stats, right stats, rating, timer, and level info.
 - Added a top-left toolbar that appears whenever you press INSERT. There you can select three windows: Show Editor, Show Game, Show Settings.
 - Added Overlay Editor for toggling HUD movable panels. You can also toggle on/off showing statistics only in game.
@@ -30,6 +26,14 @@ This fork keeps Statman's original HM3 stat tracking and rating logic, but repla
 - Overlay settings are stored in `%APPDATA%\Statman\HM3Overlay.json` and created automatically on first use.
 - Fonts are loaded from the Windows Fonts folder.
 - Hitman 2016 debug information is now rendered through the ImGui overlay.
+
+## Video showcase & Screenshots
+
+[Click here to watch a video](https://www.youtube.com/watch?v=i1WjK6aLTNU)
+
+![Overlay](https://i.imgur.com/6h4o83K.jpeg)
+
+![Overlay Menu](https://i.imgur.com/cHSAuXc.jpeg)
 
 ## Requirements
 
