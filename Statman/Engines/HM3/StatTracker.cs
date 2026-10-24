@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using Statman.Util;
 
 namespace Statman.Engines.HM3
 {
@@ -133,8 +134,11 @@ namespace Statman.Engines.HM3
             var s_Rating1 = CalculateRating1(p_Stats);
             
             // Update UI rating.
-            m_Engine.Control.SetRatingPerfect((s_Rating0 + s_Rating1) == 0);
-            m_Engine.Control.SetRating(m_Ratings[s_Rating0 + "x" + s_Rating1]);
+            var s_Rating = m_Ratings[s_Rating0 + "x" + s_Rating1];
+            var s_RatingPerfect = (s_Rating0 + s_Rating1) == 0;
+            var s_CheatWarning = Options.Get().HM3.Cheats || Options.Get().HM3.UnlimitedSaves;
+
+            m_Engine.Control.SetRating(s_Rating, s_RatingPerfect, s_CheatWarning);
 
             // Update UI stats.
             var s_BodiesFound = p_Stats.m_BodiesFound + p_Stats.m_UnconsciousBodiesFound;

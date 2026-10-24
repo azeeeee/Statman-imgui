@@ -45,6 +45,11 @@ public:
 	bool Debug2016() const { return m_Debug2016; }
 	const std::unordered_map<std::string, std::vector<LevelStartingLocation>>& GetLevelStartingLocations() const { return m_LevelStartingLocations; }
 
+	void SetCheatsEnabled(bool p_Enabled);
+	void SetUnlimitedSaves(bool p_Enabled);
+	void SetHitman2016Mode(bool p_Enabled);
+	void SetDebug2016(bool p_Enabled);
+
 protected:
 	bool CheckInstance();
 	void PerformPatches();

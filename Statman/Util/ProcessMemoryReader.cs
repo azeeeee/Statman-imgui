@@ -13,7 +13,7 @@ namespace Statman.Util
         private static extern int CloseHandle(IntPtr hObject);
 
         [DllImport("kernel32.dll")]
-        private static extern int ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, [In, Out] byte[] buffer, long size, out IntPtr lpNumberOfBytesRead);
+        private static extern int ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, [In, Out] byte[] buffer, int size, out IntPtr lpNumberOfBytesRead);
 
         public Process Process { get; private set; }
 
@@ -57,7 +57,7 @@ namespace Statman.Util
             p_BytesRead = 0;
             var s_Buffer = new byte[p_BytesToRead];
 
-            if (ReadProcessMemory(m_Process, p_MemoryAddress, s_Buffer, p_BytesToRead, out var s_BytesRead) == 0)
+            if (ReadProcessMemory(m_Process, p_MemoryAddress, s_Buffer, (int)p_BytesToRead, out var s_BytesRead) == 0)
                 return null;
 
             p_BytesRead = s_BytesRead.ToInt64();

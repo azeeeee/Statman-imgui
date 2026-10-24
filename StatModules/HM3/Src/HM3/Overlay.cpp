@@ -6,6 +6,8 @@
 #include <HM3/Structs/ZHM3GameData.h>
 #include <HM3/Structs/ZRender.h>
 
+#include <Pipeman.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cfloat>
@@ -361,7 +363,9 @@ std::optional<SVector2> WorldToScreen(const SCameraData& p_Cam, const SVector3& 
 	// Compute view and projection matrices
 	const auto s_View = XMMatrixLookAtLH(s_CameraPos, s_Target, s_Up);
 
-	constexpr auto s_AspectRatio = 1.0f;
+	const float s_AspectRatio = p_Cam.ViewHeight > 0.0f
+		? p_Cam.ViewWidth / p_Cam.ViewHeight
+		: 1.0f;
 
 	const auto s_Projection = XMMatrixPerspectiveFovLH(
 		XMConvertToRadians(p_Cam.FovDegrees),
@@ -410,6 +414,10 @@ namespace
 	bool s_CaptureInput = false;
 	bool s_PrevToggleKeyDown = false;
 
+	void* s_ZWINDOWS = nullptr;
+	uint8_t s_SavedMouseVisible = 1;
+	bool s_HasSavedMouseVisible = false;
+
 	HWND s_Window = nullptr;
 	WNDPROC s_OriginalWndProc = nullptr;
 	DWORD s_RenderThreadId = 0;
@@ -419,15 +427,16 @@ namespace
 		const char* Name;
 		const char* State;
 		bool InGame;
+		bool MainMenu = false;
 	};
 
 	const std::unordered_map<std::string, SceneInfo>& GetSceneNames()
 	{
 		static const std::unordered_map<std::string, SceneInfo> s_Names = {
-			{ "hitmanbloodmoney", { "Main Menu", "Menu", false } },
-			{ "scenes\\hitmanbloodmoney.gms", { "Main Menu", "Menu", false } },
+			{ "hitmanbloodmoney", { "Main Menu", "Menu", false, true } },
+			{ "scenes\\hitmanbloodmoney.gms", { "Main Menu", "Menu", false, true } },
 
-			{ "saveandcontinue", { "Save & Continue", "Menu", false } },
+			{ "saveandcontinue", { "Save & Continue", "Menu", false, true } },
 
 			{ "hideout\\hideout_main", { "Hideout", "In-Game", true } },
 			{ "scenes\\hideout\\hideout_main.gms", { "Hideout", "In-Game", true } },
@@ -576,6 +585,48 @@ namespace
 		SIZE_T s_Read = 0;
 		return ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(p_Address), &p_Out, sizeof(T), &s_Read)
 			&& s_Read == sizeof(T);
+	}
+
+	void UpdateGameCursor(bool p_Freeze)
+	{
+		if (!s_ZWINDOWS)
+			return;
+
+		const auto s_Address = reinterpret_cast<uintptr_t>(s_ZWINDOWS) + 0x1DE;
+
+		if (p_Freeze)
+		{
+			uint8_t s_Visible = 0;
+			if (!ReadGameMemory(s_Address, s_Visible))
+				return;
+
+			if (!s_HasSavedMouseVisible)
+			{
+				s_SavedMouseVisible = s_Visible;
+				s_HasSavedMouseVisible = true;
+			}
+
+			if (s_Visible != 0)
+			{
+				const uint8_t s_Hidden = 0;
+				WriteProcessMemory(GetCurrentProcess(), reinterpret_cast<LPVOID>(s_Address), &s_Hidden, sizeof(s_Hidden), nullptr);
+			}
+		}
+		else if (s_HasSavedMouseVisible)
+		{
+			WriteProcessMemory(GetCurrentProcess(), reinterpret_cast<LPVOID>(s_Address), &s_SavedMouseVisible, sizeof(s_SavedMouseVisible), nullptr);
+			s_HasSavedMouseVisible = false;
+		}
+	}
+
+	void SetZWINDOWSInstance(void* p_Instance)
+	{
+		if (p_Instance == s_ZWINDOWS)
+			return;
+
+		s_ZWINDOWS = p_Instance;
+		s_HasSavedMouseVisible = false;
+		UpdateGameCursor(s_CaptureInput);
 	}
 
 	bool IsInGameImage(uintptr_t p_Address)
@@ -781,6 +832,7 @@ namespace
 		bool ShowRating = true;
 		bool ShowTimer = true;
 		bool ShowLevelInfo = false;
+		bool StatsOnlyInGame = true;
 
 		std::string RegularFont = "segoeui.ttf";
 		std::string BoldFont = "segoeuib.ttf";
@@ -829,6 +881,7 @@ namespace
 	static bool s_ResetPositions = false;
 	static bool s_ShowEditor = false;
 	static bool s_ShowSettings = false;
+	static bool s_ShowGameOptions = false;
 	static ImGuiID s_DragWindow = 0;
 
 	std::filesystem::path GetSettingsPath()
@@ -913,6 +966,7 @@ namespace
 				s_Settings.ShowRating = s_Show.value("rating", s_Settings.ShowRating);
 				s_Settings.ShowTimer = s_Show.value("timer", s_Settings.ShowTimer);
 				s_Settings.ShowLevelInfo = s_Show.value("levelInfo", s_Settings.ShowLevelInfo);
+				s_Settings.StatsOnlyInGame = s_Show.value("statsOnlyInGame", s_Settings.StatsOnlyInGame);
 				s_Settings.HighlightBadStats = s_Show.value("highlightBadStats", s_Settings.HighlightBadStats);
 			}
 
@@ -988,6 +1042,7 @@ namespace
 				s_Show["rating"] = s_Settings.ShowRating;
 				s_Show["timer"] = s_Settings.ShowTimer;
 				s_Show["levelInfo"] = s_Settings.ShowLevelInfo;
+				s_Show["statsOnlyInGame"] = s_Settings.StatsOnlyInGame;
 				s_Show["highlightBadStats"] = s_Settings.HighlightBadStats;
 			}
 
@@ -1173,6 +1228,59 @@ namespace
 		s_DrawList->AddText(s_Font, s_Size, ImVec2(s_X, s_Position.y), s_Color, p_Text);
 
 		ImGui::Dummy(ImVec2(s_TextSize.x, s_TextSize.y));
+	}
+
+	float GetUiScale()
+	{
+		const ImVec2 s_Display = ImGui::GetIO().DisplaySize;
+
+		if (s_Display.x <= 0.0f || s_Display.y <= 0.0f)
+			return 1.0f;
+
+		const float s_Scale = (std::min)(s_Display.x / 1600.0f, s_Display.y / 900.0f);
+		return (std::clamp)(s_Scale, 0.75f, 1.25f);
+	}
+
+	void SendOverlayOption(const char* p_Type, bool p_Enabled)
+	{
+		if (g_Module && g_Module->Pipe())
+			g_Module->Pipe()->SendPipeMessage(p_Type, p_Enabled ? "true" : "false");
+	}
+
+	void SetCheatsFromOverlay(bool p_Enabled)
+	{
+		if (g_Module->CheatsEnabled() == p_Enabled)
+			return;
+
+		g_Module->SetCheatsEnabled(p_Enabled);
+		SendOverlayOption("EC", p_Enabled);
+	}
+
+	void SetUnlimitedSavesFromOverlay(bool p_Enabled)
+	{
+		if (g_Module->UnlimitedSaves() == p_Enabled)
+			return;
+
+		g_Module->SetUnlimitedSaves(p_Enabled);
+		SendOverlayOption("US", p_Enabled);
+	}
+
+	void SetHitman2016ModeFromOverlay(bool p_Enabled)
+	{
+		if (g_Module->Hitman2016Mode() == p_Enabled)
+			return;
+
+		g_Module->SetHitman2016Mode(p_Enabled);
+		SendOverlayOption("H2", p_Enabled);
+	}
+
+	void SetDebug2016FromOverlay(bool p_Enabled)
+	{
+		if (g_Module->Debug2016() == p_Enabled)
+			return;
+
+		g_Module->SetDebug2016(p_Enabled);
+		SendOverlayOption("2D", p_Enabled);
 	}
 
 	void BeginHudWindow(
@@ -1452,7 +1560,12 @@ namespace
 
 		s_OriginalWndProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(s_Window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&WndProc)));
 
-		if (!s_OriginalWndProc)
+		if (s_OriginalWndProc == &WndProc)
+		{
+			Log("The game window procedure is already hooked by a previous HM3 module. Overlay input won't work.\n");
+			s_OriginalWndProc = nullptr;
+		}
+		else if (!s_OriginalWndProc)
 		{
 			Log("Could not install the ImGui window procedure. Overlay input won't work.\n");
 		}
@@ -1605,6 +1718,13 @@ namespace
 		ImFont* s_RatingFont = s_Settings.BoldRating ? s_Fonts.Bold : s_Fonts.Regular;
 
 		DrawHudText(s_RatingFont, s_Settings.RatingSize, s_RatingText, s_RatingColor, false);
+
+		if (g_Module->CheatsEnabled() || g_Module->UnlimitedSaves())
+		{
+			ImGui::SameLine(0.0f, 0.0f);
+			DrawHudText(s_RatingFont, s_Settings.RatingSize, " (!)", s_Settings.HighlightColor, false);
+		}
+
 		ImGui::Dummy(ImVec2(0.0f, 2.0f));
 
 		const char* s_Difficulty = p_GameData ? GetDifficultyName(p_GameData->m_nDifficulty) : "Unknown";
@@ -1627,16 +1747,22 @@ namespace
 		auto** s_SysInterface = g_Module->Pointers()->g_pSysInterface;
 
 		std::string s_DebugText;
+		SMatrix33 s_PlayerMat{};
+		SVector3 s_PlayerPos{};
+		bool s_HasPlayerTransform = false;
+		int s_ClosestActor = -1;
+		float s_ClosestActorDistanceSq = FLT_MAX;
 
 		if (s_Hitman->m_pBaseGeom && s_Hitman->m_pBaseGeom->m_pParent)
 		{
-			const auto& s_HitmanMat = s_Hitman->m_pBaseGeom->m_pParent->m_mMat;
-			const auto& s_HitmanPos = s_Hitman->m_pBaseGeom->m_pParent->m_vPos;
+			s_PlayerMat = s_Hitman->m_pBaseGeom->m_pParent->m_mMat;
+			s_PlayerPos = s_Hitman->m_pBaseGeom->m_pParent->m_vPos;
+			s_HasPlayerTransform = true;
 
-			s_DebugText += std::format("({:.2f}, {:.2f}, {:.2f}) ", s_HitmanMat.xAxis.x, s_HitmanMat.xAxis.y, s_HitmanMat.xAxis.z);
-			s_DebugText += std::format("({:.2f}, {:.2f}, {:.2f}) ", s_HitmanMat.yAxis.x, s_HitmanMat.yAxis.y, s_HitmanMat.yAxis.z);
-			s_DebugText += std::format("({:.2f}, {:.2f}, {:.2f}) ", s_HitmanMat.zAxis.x, s_HitmanMat.zAxis.y, s_HitmanMat.zAxis.z);
-			s_DebugText += std::format("({:.2f}, {:.2f}, {:.2f}) ", s_HitmanPos.x, s_HitmanPos.y, s_HitmanPos.z);
+			s_DebugText += std::format("({:.2f}, {:.2f}, {:.2f}) ", s_PlayerMat.xAxis.x, s_PlayerMat.xAxis.y, s_PlayerMat.xAxis.z);
+			s_DebugText += std::format("({:.2f}, {:.2f}, {:.2f}) ", s_PlayerMat.yAxis.x, s_PlayerMat.yAxis.y, s_PlayerMat.yAxis.z);
+			s_DebugText += std::format("({:.2f}, {:.2f}, {:.2f}) ", s_PlayerMat.zAxis.x, s_PlayerMat.zAxis.y, s_PlayerMat.zAxis.z);
+			s_DebugText += std::format("({:.2f}, {:.2f}, {:.2f}) ", s_PlayerPos.x, s_PlayerPos.y, s_PlayerPos.z);
 		}
 
 		if (s_SysInterface && *s_SysInterface && (*s_SysInterface)->m_pRenderer)
@@ -1669,6 +1795,8 @@ namespace
 					};
 
 					ImDrawList* s_DrawList = ImGui::GetBackgroundDrawList();
+					ImFont* s_LabelFont = s_Fonts.Regular ? s_Fonts.Regular : ImGui::GetFont();
+					const float s_LabelSize = (std::max)(12.0f, s_Settings.UISize * 0.85f * GetUiScale());
 
 					for (uint32_t i = 0; i < s_GameData->m_nActorCount; ++i)
 					{
@@ -1683,15 +1811,40 @@ namespace
 
 						const auto& s_Pos = s_Actor->m_pBaseGeom->m_pParent->m_vPos;
 
+						if (s_HasPlayerTransform)
+						{
+							const auto s_Delta = XMVectorSet(
+								s_Pos.x - s_PlayerPos.x,
+								s_Pos.y - s_PlayerPos.y,
+								s_Pos.z - s_PlayerPos.z,
+								0.0f);
+
+							const float s_DistanceSq = XMVectorGetX(XMVector3LengthSq(s_Delta));
+
+							if (s_DistanceSq < s_ClosestActorDistanceSq)
+							{
+								s_ClosestActorDistanceSq = s_DistanceSq;
+								s_ClosestActor = static_cast<int>(i);
+							}
+						}
+
 						if (const auto s_ScreenCoord = WorldToScreen(s_CameraData, s_Pos))
 						{
 							const std::string s_ActorId = std::to_string(i);
 
 							s_DrawList->AddText(
+								s_LabelFont,
+								s_LabelSize,
+								ImVec2(s_ScreenCoord->x + 1.0f, s_ScreenCoord->y + 1.0f),
+								IM_COL32(0, 0, 0, 200),
+								s_ActorId.c_str());
+
+							s_DrawList->AddText(
+								s_LabelFont,
+								s_LabelSize,
 								ImVec2(s_ScreenCoord->x, s_ScreenCoord->y),
-								IM_COL32(0, 255, 0, 255),
-								s_ActorId.c_str()
-							);
+								IM_COL32(120, 255, 150, 230),
+								s_ActorId.c_str());
 						}
 					}
 				}
@@ -1701,15 +1854,60 @@ namespace
 		if (!s_CaptureInput)
 			return;
 
-		ImGui::SetNextWindowPos(ImVec2(24.0f, 64.0f), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowSize(ImVec2(360.0f, 0.0f), ImGuiCond_FirstUseEver);
+		const float s_Scale = GetUiScale();
+
+		ImGui::SetNextWindowPos(ImVec2(24.0f * s_Scale, 64.0f * s_Scale), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(380.0f * s_Scale, 0.0f), ImGuiCond_FirstUseEver);
 
 		if (ImGui::Begin("2016 Debug##debug2016", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings))
 		{
+			ImGui::PushFont(s_Fonts.Regular ? s_Fonts.Regular : ImGui::GetFont(), s_Settings.UISize * s_Scale);
+
 			if (s_DebugText.empty())
 				ImGui::TextDisabled("No data.");
 			else
 				ImGui::TextUnformatted(s_DebugText.c_str());
+
+			ImGui::Separator();
+			ImGui::Text("Scene: %s", g_Module->m_SceneName.empty() ? "unknown" : g_Module->m_SceneName.c_str());
+
+			if (s_HasPlayerTransform)
+			{
+				static char s_LocationName[64] = "";
+				ImGui::InputText("Location name", s_LocationName, sizeof(s_LocationName));
+
+				if (s_ClosestActor >= 0)
+					ImGui::Text("Closest outfit: %d (%.1f m)", s_ClosestActor, std::sqrt(s_ClosestActorDistanceSq));
+				else
+					ImGui::TextDisabled("No outfit candidate nearby.");
+
+				if (ImGui::Button("Copy location JSON"))
+				{
+					const std::string s_Name = s_LocationName[0] ? s_LocationName : "new_location";
+					const std::string s_Json = std::format(
+						"\"{}\": {{\n"
+						"    \"position\": [[{:.2f}, {:.2f}, {:.2f}], [{:.2f}, {:.2f}, {:.2f}], [{:.2f}, {:.2f}, {:.2f}], [{:.2f}, {:.2f}, {:.2f}]],\n"
+						"    \"outfit\": {}\n"
+						"}}",
+						s_Name,
+						s_PlayerMat.xAxis.x, s_PlayerMat.xAxis.y, s_PlayerMat.xAxis.z,
+						s_PlayerMat.yAxis.x, s_PlayerMat.yAxis.y, s_PlayerMat.yAxis.z,
+						s_PlayerMat.zAxis.x, s_PlayerMat.zAxis.y, s_PlayerMat.zAxis.z,
+						s_PlayerPos.x, s_PlayerPos.y, s_PlayerPos.z,
+						s_ClosestActor);
+
+					ImGui::SetClipboardText(s_Json.c_str());
+				}
+			}
+			else
+			{
+				ImGui::TextDisabled("Player position unavailable.");
+			}
+
+			if (ImGui::Button("Reload locations") && g_Module->Pipe())
+				g_Module->Pipe()->SendPipeMessage("RL", "");
+
+			ImGui::PopFont();
 		}
 
 		ImGui::End();
@@ -1718,13 +1916,14 @@ namespace
 	void DrawOverlayToolbar()
 	{
 		ImGuiViewport* s_Viewport = ImGui::GetMainViewport();
+		const float s_Scale = GetUiScale();
 
 		ImGui::SetNextWindowPos(
-			ImVec2(s_Viewport->WorkPos.x + 16.0f, s_Viewport->WorkPos.y + 16.0f),
+			ImVec2(s_Viewport->WorkPos.x + 16.0f * s_Scale, s_Viewport->WorkPos.y + 16.0f * s_Scale),
 			ImGuiCond_FirstUseEver);
 
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 6.0f));
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 5.0f);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * s_Scale, 6.0f * s_Scale));
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 5.0f * s_Scale);
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
 		ImGui::PushStyleColor(ImGuiCol_WindowBg, s_Settings.ChromeBg);
 		ImGui::PushStyleColor(ImGuiCol_Border, s_Settings.ChromeBorder);
@@ -1740,10 +1939,15 @@ namespace
 			ImGuiWindowFlags_NoScrollbar |
 			ImGuiWindowFlags_AlwaysAutoResize))
 		{
-			ImGui::PushFont(s_Fonts.Regular, s_Settings.UISize);
+			ImGui::PushFont(s_Fonts.Regular, s_Settings.UISize * s_Scale);
 
 			if (ImGui::Button(s_ShowEditor ? "Hide Editor" : "Overlay Editor"))
 				s_ShowEditor = !s_ShowEditor;
+
+			ImGui::SameLine();
+
+			if (ImGui::Button(s_ShowGameOptions ? "Hide Game" : "Game"))
+				s_ShowGameOptions = !s_ShowGameOptions;
 
 			ImGui::SameLine();
 
@@ -1765,13 +1969,17 @@ namespace
 	void DrawEditor()
 	{
 		ImGuiViewport* s_Viewport = ImGui::GetMainViewport();
+		const float s_Scale = GetUiScale();
+		const bool s_Narrow = s_Scale < 0.9f;
 
 		ImGui::SetNextWindowPos(
-			ImVec2(s_Viewport->WorkPos.x + s_Viewport->WorkSize.x * 0.5f, s_Viewport->WorkPos.y + 16.0f),
+			s_Narrow
+				? ImVec2(s_Viewport->WorkPos.x + 16.0f * s_Scale, s_Viewport->WorkPos.y + 64.0f * s_Scale)
+				: ImVec2(s_Viewport->WorkPos.x + s_Viewport->WorkSize.x * 0.5f, s_Viewport->WorkPos.y + 16.0f * s_Scale),
 			ImGuiCond_FirstUseEver,
-			ImVec2(0.5f, 0.0f));
+			s_Narrow ? ImVec2(0.0f, 0.0f) : ImVec2(0.5f, 0.0f));
 
-		ImGui::SetNextWindowSize(ImVec2(440.0f, 0.0f), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(440.0f * s_Scale, 0.0f), ImGuiCond_FirstUseEver);
 
 		if (!ImGui::Begin("Overlay Editor##editor", &s_ShowEditor, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings))
 		{
@@ -1779,7 +1987,7 @@ namespace
 			return;
 		}
 
-		ImGui::PushFont(s_Fonts.Regular, s_Settings.UISize);
+		ImGui::PushFont(s_Fonts.Regular, s_Settings.UISize * s_Scale);
 
 		ImGui::TextDisabled("Use the Overlay Editor toolbar button to show or hide this window.");
 		ImGui::Separator();
@@ -1792,6 +2000,7 @@ namespace
 		ImGui::Checkbox("Timer", &s_Settings.ShowTimer);
 		ImGui::SameLine();
 		ImGui::Checkbox("Level info", &s_Settings.ShowLevelInfo);
+		ImGui::Checkbox("Show stats only in game", &s_Settings.StatsOnlyInGame);
 
 		ImGui::Separator();
 
@@ -1819,16 +2028,71 @@ namespace
 		ImGui::End();
 	}
 
+	void DrawGameOptions()
+	{
+		ImGuiViewport* s_Viewport = ImGui::GetMainViewport();
+		const float s_Scale = GetUiScale();
+
+		ImGui::SetNextWindowPos(
+			ImVec2(
+				s_Viewport->WorkPos.x + 16.0f * s_Scale,
+				s_Viewport->WorkPos.y + s_Viewport->WorkSize.y - 48.0f * s_Scale),
+			ImGuiCond_FirstUseEver,
+			ImVec2(0.0f, 1.0f));
+
+		ImGui::SetNextWindowSize(ImVec2(300.0f * s_Scale, 0.0f), ImGuiCond_FirstUseEver);
+
+		if (!ImGui::Begin("Game##gameoptions", &s_ShowGameOptions, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings))
+		{
+			ImGui::End();
+			return;
+		}
+
+		ImGui::PushFont(s_Fonts.Regular, s_Settings.UISize * s_Scale);
+
+		bool s_Cheats = g_Module->CheatsEnabled();
+
+		if (ImGui::Checkbox("Enable cheats", &s_Cheats))
+			SetCheatsFromOverlay(s_Cheats);
+
+		bool s_UnlimitedSaves = g_Module->UnlimitedSaves();
+
+		if (ImGui::Checkbox("Unlimited saves", &s_UnlimitedSaves))
+			SetUnlimitedSavesFromOverlay(s_UnlimitedSaves);
+
+		bool s_Hitman2016 = g_Module->Hitman2016Mode();
+
+		if (ImGui::Checkbox("Hitman 2016 mode", &s_Hitman2016))
+			SetHitman2016ModeFromOverlay(s_Hitman2016);
+
+		bool s_Debug2016 = g_Module->Debug2016();
+
+		if (ImGui::Checkbox("2016 debug info", &s_Debug2016))
+			SetDebug2016FromOverlay(s_Debug2016);
+
+		if (s_Cheats || s_UnlimitedSaves)
+			ImGui::TextColored(s_Settings.HighlightColor, "Active cheats are marked on the HUD.");
+
+		ImGui::PopFont();
+		ImGui::End();
+	}
+
 	void DrawSettings()
 	{
 		ImGuiViewport* s_Viewport = ImGui::GetMainViewport();
+		const float s_Scale = GetUiScale();
+		const float s_MaxWidth = (std::min)(720.0f * s_Scale, s_Viewport->WorkSize.x - 32.0f * s_Scale);
+		const float s_MinWidth = (std::min)(500.0f * s_Scale, s_MaxWidth);
+		const float s_MaxHeight = (std::max)(240.0f * s_Scale, s_Viewport->WorkSize.y - 32.0f * s_Scale);
 
 		ImGui::SetNextWindowPos(
-			ImVec2(s_Viewport->WorkPos.x + s_Viewport->WorkSize.x - 24.0f, s_Viewport->WorkPos.y + 16.0f),
+			ImVec2(s_Viewport->WorkPos.x + s_Viewport->WorkSize.x - 24.0f * s_Scale, s_Viewport->WorkPos.y + 16.0f * s_Scale),
 			ImGuiCond_FirstUseEver,
 			ImVec2(1.0f, 0.0f));
 
-		ImGui::SetNextWindowSizeConstraints(ImVec2(390.0f, 0.0f), ImVec2(580.0f, FLT_MAX));
+		ImGui::SetNextWindowSizeConstraints(
+			ImVec2(s_MinWidth, 0.0f),
+			ImVec2(s_MaxWidth, s_MaxHeight));
 
 		if (!ImGui::Begin("Overlay Settings##settings", &s_ShowSettings, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings))
 		{
@@ -1836,70 +2100,75 @@ namespace
 			return;
 		}
 
-		ImGui::PushFont(s_Fonts.Regular, s_Settings.UISize);
+		ImGui::PushFont(s_Fonts.Regular, s_Settings.UISize * s_Scale);
 
-		if (ImGui::CollapsingHeader("Fonts", ImGuiTreeNodeFlags_DefaultOpen))
+		if (ImGui::BeginTabBar("##overlay_settings_tabs", ImGuiTabBarFlags_FittingPolicyScroll))
 		{
-			static char s_RegularFilter[64] = "";
-			static char s_BoldFilter[64] = "";
-			static char s_TimerFilter[64] = "";
+			if (ImGui::BeginTabItem("Fonts"))
+			{
+				static char s_RegularFilter[64] = "";
+				static char s_BoldFilter[64] = "";
+				static char s_TimerFilter[64] = "";
 
-			if (FontCombo("Regular", s_Settings.RegularFont, s_RegularFilter, sizeof(s_RegularFilter)))
-				s_FontsDirty = true;
+				if (FontCombo("Regular", s_Settings.RegularFont, s_RegularFilter, sizeof(s_RegularFilter)))
+					s_FontsDirty = true;
 
-			if (FontCombo("Bold", s_Settings.BoldFont, s_BoldFilter, sizeof(s_BoldFilter)))
-				s_FontsDirty = true;
+				if (FontCombo("Bold", s_Settings.BoldFont, s_BoldFilter, sizeof(s_BoldFilter)))
+					s_FontsDirty = true;
 
-			if (FontCombo("Timer", s_Settings.TimerFont, s_TimerFilter, sizeof(s_TimerFilter)))
-				s_FontsDirty = true;
+				if (FontCombo("Timer", s_Settings.TimerFont, s_TimerFilter, sizeof(s_TimerFilter)))
+					s_FontsDirty = true;
 
-			ImGui::Checkbox("Bold labels", &s_Settings.BoldLabels);
-			ImGui::SameLine();
-			ImGui::Checkbox("Bold values", &s_Settings.BoldValues);
-			ImGui::Checkbox("Bold rating", &s_Settings.BoldRating);
-			ImGui::SameLine();
-			ImGui::Checkbox("Bold timer", &s_Settings.BoldTimer);
+				ImGui::Checkbox("Bold labels", &s_Settings.BoldLabels);
+				ImGui::SameLine();
+				ImGui::Checkbox("Bold values", &s_Settings.BoldValues);
+				ImGui::Checkbox("Bold rating", &s_Settings.BoldRating);
+				ImGui::SameLine();
+				ImGui::Checkbox("Bold timer", &s_Settings.BoldTimer);
 
-			ImGui::TextDisabled("Fonts are loaded from the Windows Fonts folder.");
-		}
+				ImGui::TextDisabled("Fonts are loaded from the Windows Fonts folder.");
 
-		if (ImGui::CollapsingHeader("Sizes", ImGuiTreeNodeFlags_DefaultOpen))
-		{
-			ImGui::SliderFloat("Label size", &s_Settings.LabelSize, 8.0f, 64.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
-			ImGui::SliderFloat("Value size", &s_Settings.ValueSize, 8.0f, 64.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
-			ImGui::SliderFloat("Rating size", &s_Settings.RatingSize, 8.0f, 64.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
-			ImGui::SliderFloat("Difficulty size", &s_Settings.DifficultySize, 8.0f, 64.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
-			ImGui::SliderFloat("Timer size", &s_Settings.TimerSize, 8.0f, 64.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
-			ImGui::SliderFloat("UI size", &s_Settings.UISize, 8.0f, 32.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
-			ImGui::SliderFloat("Row spacing", &s_Settings.RowSpacing, 0.0f, 32.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
-		}
+				ImGui::EndTabItem();
+			}
 
-		if (ImGui::CollapsingHeader("Colors", ImGuiTreeNodeFlags_DefaultOpen))
-		{
-			constexpr auto s_ColorFlags = ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf;
+			if (ImGui::BeginTabItem("Sizes"))
+			{
+				ImGui::SliderFloat("Label size", &s_Settings.LabelSize, 8.0f, 64.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::SliderFloat("Value size", &s_Settings.ValueSize, 8.0f, 64.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::SliderFloat("Rating size", &s_Settings.RatingSize, 8.0f, 64.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::SliderFloat("Difficulty size", &s_Settings.DifficultySize, 8.0f, 64.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::SliderFloat("Timer size", &s_Settings.TimerSize, 8.0f, 64.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::SliderFloat("UI size", &s_Settings.UISize, 8.0f, 32.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::SliderFloat("Row spacing", &s_Settings.RowSpacing, 0.0f, 32.0f, "%.0f px", ImGuiSliderFlags_AlwaysClamp);
 
-			ImGui::ColorEdit4("Label", &s_Settings.LabelColor.x, s_ColorFlags);
-			ImGui::ColorEdit4("Value", &s_Settings.ValueColor.x, s_ColorFlags);
-			ImGui::ColorEdit4("Highlight", &s_Settings.HighlightColor.x, s_ColorFlags);
-			ImGui::ColorEdit4("Timer", &s_Settings.TimerColor.x, s_ColorFlags);
-			ImGui::ColorEdit4("Rating", &s_Settings.RatingColor.x, s_ColorFlags);
-			ImGui::ColorEdit4("Rating (bad)", &s_Settings.RatingBadColor.x, s_ColorFlags);
-			ImGui::ColorEdit4("Difficulty", &s_Settings.DifficultyColor.x, s_ColorFlags);
-			ImGui::ColorEdit4("Chrome background", &s_Settings.ChromeBg.x, s_ColorFlags);
-			ImGui::ColorEdit4("Chrome border", &s_Settings.ChromeBorder.x, s_ColorFlags);
-			ImGui::ColorEdit4("Chrome text", &s_Settings.ChromeText.x, s_ColorFlags);
-		}
+				ImGui::EndTabItem();
+			}
 
-		if (ImGui::CollapsingHeader("HUD", ImGuiTreeNodeFlags_DefaultOpen))
-		{
-			ImGui::Checkbox("Left stats", &s_Settings.ShowLeftStats);
-			ImGui::SameLine();
-			ImGui::Checkbox("Right stats", &s_Settings.ShowRightStats);
-			ImGui::Checkbox("Rating", &s_Settings.ShowRating);
-			ImGui::SameLine();
-			ImGui::Checkbox("Timer", &s_Settings.ShowTimer);
-			ImGui::Checkbox("Level info", &s_Settings.ShowLevelInfo);
-			ImGui::Checkbox("Highlight bad stats", &s_Settings.HighlightBadStats);
+			if (ImGui::BeginTabItem("Colors"))
+			{
+				constexpr auto s_ColorFlags = ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf;
+
+				ImGui::SeparatorText("Text");
+				ImGui::ColorEdit4("Label", &s_Settings.LabelColor.x, s_ColorFlags);
+				ImGui::ColorEdit4("Value", &s_Settings.ValueColor.x, s_ColorFlags);
+				ImGui::ColorEdit4("Highlight", &s_Settings.HighlightColor.x, s_ColorFlags);
+				ImGui::ColorEdit4("Timer", &s_Settings.TimerColor.x, s_ColorFlags);
+				ImGui::ColorEdit4("Rating", &s_Settings.RatingColor.x, s_ColorFlags);
+				ImGui::ColorEdit4("Rating (bad)", &s_Settings.RatingBadColor.x, s_ColorFlags);
+				ImGui::ColorEdit4("Difficulty", &s_Settings.DifficultyColor.x, s_ColorFlags);
+
+				ImGui::SeparatorText("Behavior");
+				ImGui::Checkbox("Highlight bad stats", &s_Settings.HighlightBadStats);
+
+				ImGui::SeparatorText("Chrome");
+				ImGui::ColorEdit4("Background", &s_Settings.ChromeBg.x, s_ColorFlags);
+				ImGui::ColorEdit4("Border", &s_Settings.ChromeBorder.x, s_ColorFlags);
+				ImGui::ColorEdit4("Text", &s_Settings.ChromeText.x, s_ColorFlags);
+
+				ImGui::EndTabItem();
+			}
+
+			ImGui::EndTabBar();
 		}
 
 		ImGui::Separator();
@@ -1919,6 +2188,43 @@ namespace
 		ImGui::End();
 	}
 
+	void DrawActiveWarnings()
+	{
+		std::string s_Warning;
+
+		if (g_Module->CheatsEnabled())
+			s_Warning = "CHEATS ENABLED";
+
+		if (g_Module->UnlimitedSaves())
+		{
+			if (!s_Warning.empty())
+				s_Warning += "  |  ";
+
+			s_Warning += "UNLIMITED SAVES";
+		}
+
+		if (s_Warning.empty())
+			return;
+
+		ImDrawList* s_DrawList = ImGui::GetBackgroundDrawList();
+		ImFont* s_Font = s_Fonts.Regular ? s_Fonts.Regular : ImGui::GetFont();
+		const float s_Scale = GetUiScale();
+		const float s_Size = (std::max)(11.0f, s_Settings.UISize * 0.8f * s_Scale);
+		const ImVec2 s_TextSize = s_Font->CalcTextSizeA(s_Size, FLT_MAX, 0.0f, s_Warning.c_str());
+		ImGuiViewport* s_Viewport = ImGui::GetMainViewport();
+		const ImVec2 s_Position(
+			s_Viewport->WorkPos.x + 16.0f * s_Scale,
+			s_Viewport->WorkPos.y + s_Viewport->WorkSize.y - s_TextSize.y - 16.0f * s_Scale);
+
+		s_DrawList->AddRectFilled(
+			ImVec2(s_Position.x - 6.0f, s_Position.y - 3.0f),
+			ImVec2(s_Position.x + s_TextSize.x + 6.0f, s_Position.y + s_TextSize.y + 3.0f),
+			IM_COL32(0, 0, 0, 110),
+			4.0f);
+
+		s_DrawList->AddText(s_Font, s_Size, s_Position, IM_COL32(255, 190, 90, 210), s_Warning.c_str());
+	}
+
 	void DrawOverlay()
 	{
 		const bool s_Capture = s_CaptureInput;
@@ -1930,6 +2236,8 @@ namespace
 
 		const SceneInfo* s_SceneInfo = FindSceneInfo(g_Module->m_SceneName);
 		const bool s_InGame = s_SceneInfo && s_SceneInfo->InGame;
+		const bool s_MainMenu = s_SceneInfo && s_SceneInfo->MainMenu;
+		const bool s_ShowStats = !s_Settings.StatsOnlyInGame || !s_MainMenu;
 
 		double s_CurrentTimeSeconds = 0.0;
 
@@ -1953,7 +2261,7 @@ namespace
 		ImGuiViewport* s_Viewport = ImGui::GetMainViewport();
 		const ImVec2 s_Center = s_Viewport->GetCenter();
 
-		if (s_Settings.ShowLeftStats)
+		if (s_Settings.ShowLeftStats && s_ShowStats)
 		{
 			BeginHudWindow(
 				"##hud_left",
@@ -1973,7 +2281,7 @@ namespace
 			EndHudWindow(s_Capture);
 		}
 
-		if (s_Settings.ShowRightStats)
+		if (s_Settings.ShowRightStats && s_ShowStats)
 		{
 			BeginHudWindow(
 				"##hud_right",
@@ -1993,7 +2301,7 @@ namespace
 			EndHudWindow(s_Capture);
 		}
 
-		if (s_Settings.ShowRating)
+		if (s_Settings.ShowRating && s_ShowStats)
 		{
 			BeginHudWindow(
 				"##hud_rating",
@@ -2010,7 +2318,7 @@ namespace
 			EndHudWindow(s_Capture);
 		}
 
-		if (s_Settings.ShowTimer)
+		if (s_Settings.ShowTimer && s_ShowStats)
 		{
 			BeginHudWindow(
 				"##hud_timer",
@@ -2032,7 +2340,7 @@ namespace
 			EndHudWindow(s_Capture);
 		}
 
-		if (s_Settings.ShowLevelInfo)
+		if (s_Settings.ShowLevelInfo && s_ShowStats)
 		{
 			BeginHudWindow(
 				"##hud_level",
@@ -2080,14 +2388,26 @@ namespace
 
 			if (s_ShowSettings)
 				DrawSettings();
+
+			if (s_ShowGameOptions)
+				DrawGameOptions();
 		}
+
+		DrawActiveWarnings();
 	}
+}
+
+void Overlay_SetZWINDOWSInstance(void* p_Instance)
+{
+	SetZWINDOWSInstance(p_Instance);
 }
 
 void Overlay_Shutdown()
 {
 	if (!s_Initialized)
 		return;
+
+	UpdateGameCursor(false);
 
 	SaveSettings();
 
@@ -2129,6 +2449,7 @@ DECLARE_STDCALL_DETOUR(HM3Hooks, HRESULT, IDirect3DDevice9__EndScene, IDirect3DD
 	{
 		UpdateActionManager(false);
 		s_CaptureInput = false;
+		UpdateGameCursor(false);
 		return o_IDirect3DDevice9__EndScene(th);
 	}
 
@@ -2152,9 +2473,11 @@ DECLARE_STDCALL_DETOUR(HM3Hooks, HRESULT, IDirect3DDevice9__EndScene, IDirect3DD
 		if (s_CaptureInput)
 		{
 			ClipCursor(nullptr);
+			UpdateGameCursor(true);
 		}
 		else
 		{
+			UpdateGameCursor(false);
 			SaveSettings();
 			s_DragWindow = 0;
 		}

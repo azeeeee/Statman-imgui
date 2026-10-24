@@ -43,8 +43,6 @@ namespace Statman
         public static void RegisterEngines()
         {
             // Register all supported/required engines.
-            EngineManager.RegisterEngine(new HM52021Engine());
-            EngineManager.RegisterEngine(new HM5Engine());
             EngineManager.RegisterEngine(new HM3Engine());
         }
     }

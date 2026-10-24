@@ -6,6 +6,7 @@
 #pragma comment(lib, "d3d9")
 
 void Overlay_Shutdown();
+void Overlay_SetZWINDOWSInstance(void* p_Instance);
 
 struct DetectionIterator;
 class ZScene;
@@ -30,6 +31,7 @@ public:
 	DECLARE_THISCALL_HOOK(void, ZHM3LevelControl_FrameUpdate, ZHM3LevelControl* th);
 	DECLARE_THISCALL_HOOK(int, ZHM3LevelControl_MissionCompleted2, ZHM3LevelControl* th);
 	DECLARE_THISCALL_HOOK(void, ZLimitSaves_Click, ZLimitSaves* th, eZWUserEvents a2, int a3, ZXMLGUISystem* a4);
+	DECLARE_THISCALL_HOOK(void, ZWINDOWS_Update, void* th);
 	DECLARE_STDCALL_HOOK(HRESULT, IDirect3DDevice9__EndScene, IDirect3DDevice9* th);
 	DECLARE_STDCALL_HOOK(HRESULT, IDirect3DDevice9__Reset, IDirect3DDevice9* th, D3DPRESENT_PARAMETERS* pPresentationParameters);
 

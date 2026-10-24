@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 
 namespace Statman.Engines.HM3.Controls
@@ -41,22 +42,23 @@ namespace Statman.Engines.HM3.Controls
             });
         }
 
-        public void SetRating(string p_Rating)
+        public void SetRating(string p_Rating, bool p_Perfect, bool p_CheatWarning)
         {
             Dispatcher.Invoke(() =>
             {
-                RatingLabel.Content = p_Rating.Replace("_", "__");
-            });
-        }
+                var s_Text = new TextBlock();
+                s_Text.Inlines.Add(new Run(p_Rating)
+                {
+                    Foreground = (Brush) FindResource(p_Perfect ? "LabelBrush" : "AlertLabelBrush")
+                });
 
-        public void SetRatingPerfect(bool p_Perfect)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                if (p_Perfect)
-                    RatingLabel.Foreground = (Brush) FindResource("LabelBrush");
-                else
-                    RatingLabel.Foreground = (Brush) FindResource("AlertLabelBrush");
+                if (p_CheatWarning)
+                    s_Text.Inlines.Add(new Run(" (!)")
+                    {
+                        Foreground = (Brush) FindResource("WarningLabelBrush")
+                    });
+
+                RatingLabel.Content = s_Text;
             });
         }
 

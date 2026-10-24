@@ -12,6 +12,8 @@
 
 #include "Utils.h"
 
+extern HMODULE g_ModuleHandle;
+
 HM3Module::HM3Module()
 {
 }
@@ -125,29 +127,48 @@ void HM3Module::PerformPatches()
 	// Nothing here.
 }
 
+void HM3Module::SetCheatsEnabled(bool p_Enabled)
+{
+	m_CheatsEnabled = p_Enabled;
+
+	if (m_Pointers && m_Pointers->CConfiguration__m_bCheatsEnabled)
+		*m_Pointers->CConfiguration__m_bCheatsEnabled = p_Enabled;
+}
+
+void HM3Module::SetUnlimitedSaves(bool p_Enabled)
+{
+	m_UnlimitedSaves = p_Enabled;
+}
+
+void HM3Module::SetHitman2016Mode(bool p_Enabled)
+{
+	m_Hitman2016Mode = p_Enabled;
+}
+
+void HM3Module::SetDebug2016(bool p_Enabled)
+{
+	m_Debug2016 = p_Enabled;
+}
+
 void HM3Module::OnMessage(const std::string& p_Type, const std::string& p_Content)
 {
 	Log("Got message '%s' from IPC: %s\n", p_Type.c_str(), p_Content.c_str());
 
 	if (p_Type == "EC")
 	{
-		// Enable cheats.
-		m_CheatsEnabled = p_Content == "true";
-		*Pointers()->CConfiguration__m_bCheatsEnabled = m_CheatsEnabled;
+		SetCheatsEnabled(p_Content == "true");
 		return;
 	}
 
 	if (p_Type == "US")
 	{
-		// Unlimited saves.
-		m_UnlimitedSaves = p_Content == "true";
+		SetUnlimitedSaves(p_Content == "true");
 		return;
 	}
 
 	if (p_Type == "H2")
 	{
-		// Hitman 2016 mode.
-		m_Hitman2016Mode = p_Content == "true";
+		SetHitman2016Mode(p_Content == "true");
 		return;
 	}
 
@@ -160,8 +181,7 @@ void HM3Module::OnMessage(const std::string& p_Type, const std::string& p_Conten
 
 	if (p_Type == "2D")
 	{
-		// Draw debug overlay for 2016 mode
-		m_Debug2016 = p_Content == "true";
+		SetDebug2016(p_Content == "true");
 		return;
 	}
 
@@ -180,6 +200,9 @@ void HM3Module::OnMessage(const std::string& p_Type, const std::string& p_Conten
 		{
 			delete g_Module;
 			g_Module = nullptr;
+
+			if (g_ModuleHandle)
+				FreeLibraryAndExitThread(g_ModuleHandle, 0);
 		});
 
 		s_ExitThread.detach();

@@ -3,6 +3,7 @@
 #include <HM3/HM3Module.h>
 
 HM3Module* g_Module = nullptr;
+HMODULE g_ModuleHandle = nullptr;
 
 void OnAttach();
 
@@ -10,6 +11,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 {
 	if (ul_reason_for_call != DLL_PROCESS_ATTACH)
 		return TRUE;
+
+	g_ModuleHandle = hModule;
 
 	CreateThread(NULL, NULL, reinterpret_cast<LPTHREAD_START_ROUTINE>(OnAttach), NULL, NULL, NULL);
 

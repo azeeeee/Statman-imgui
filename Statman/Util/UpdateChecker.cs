@@ -89,7 +89,7 @@ namespace Statman.Util
 
         private static string GetLatestReleaseData()
         {
-            var s_Request = (HttpWebRequest) WebRequest.Create("https://api.github.com/repos/OrfeasZ/Statman/releases/latest");
+            var s_Request = (HttpWebRequest) WebRequest.Create("https://api.github.com/repos/azeeeee/statman-imgui/releases/latest");
             s_Request.Method = "GET";
 
             s_Request.UserAgent = "Statman-Updater";

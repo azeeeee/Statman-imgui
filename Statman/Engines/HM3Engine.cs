@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using PeNet.Header.Net.MetaDataTables;
@@ -229,10 +230,22 @@ namespace Statman.Engines
             Options.Update(opt => opt.HM3.Hitman2016Mode = s_MenuItem.IsChecked);
         }
 
+        private void ReloadHitman2016Data()
+        {
+            try
+            {
+                var s_Hitman2016Data = System.IO.File.ReadAllText("HM3_locations.json");
+                SendMessage("2J", s_Hitman2016Data);
+            }
+            catch (Exception s_Exception)
+            {
+                Log.Exception("Failed to reload HM3_locations.json", s_Exception);
+            }
+        }
+
         private void OnReloadHitman2016(object p_Sender, RoutedEventArgs p_RoutedEventArgs)
         {
-            var s_Hitman2016Data = System.IO.File.ReadAllText("HM3_locations.json");
-            SendMessage("2J", s_Hitman2016Data);
+            ReloadHitman2016Data();
         }
 
         private void OnHitman2016DebugMode(object p_Sender, RoutedEventArgs p_RoutedEventArgs)
@@ -255,6 +268,21 @@ namespace Statman.Engines
 
             SendMessage("OV", s_MenuItem.IsChecked ? "true" : "false");
             Options.Update(opt => opt.HM3.Overlay = s_MenuItem.IsChecked);
+        }
+
+        private void SyncMenuItem(string p_Header, bool p_Checked)
+        {
+            if (MainApp.MainWindow == null)
+                return;
+
+            MainApp.MainWindow.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                foreach (var s_Item in m_MenuItems)
+                {
+                    if (s_Item is MenuItem s_MenuItem && s_MenuItem.Header as string == p_Header)
+                        s_MenuItem.IsChecked = p_Checked;
+                }
+            }));
         }
 
         public void Update()
@@ -297,45 +325,72 @@ namespace Statman.Engines
 
                 try
                 {
-                    if (Reader.OpenProcess())
+                    if (!Reader.OpenProcess())
                     {
-                        m_SkipUpdates = 0;
-                        Active = true;
-
-                        // Create our injector and inject our stat module.
-                        m_Injector = new Injector(m_GameProcess, true);
-                        m_Injector.InjectLibrary("HM3.dll");
-
-                        // Setup our main control.
-                        MainApp.MainWindow.Dispatcher.Invoke(() =>
-                        {
-                            Control = new MainControl();
-                        });
-
-                        // Setup our engine-specific classes.
-                        StatTracker = new StatTracker(this);
-                        TimeTracker = new TimeTracker(this);
-
-                        // Update level labels.
-                        CurrentLevel = "No Level";
-                        CurrentLevelScene = "No Level";
-                        InGame = false;
-
-                        Control.SetCurrentLevel(CurrentLevel);
-                        Control.SetCurrentLevelScene(CurrentLevelScene);
-
-                        // Set our control in the main window.
-                        InitMenuItems();
-                        MainApp.MainWindow.SetEngineControl(Control, m_MenuItems);
+                        Reader = null;
+                        m_GameProcess = null;
+                        return;
                     }
+
+                    m_SkipUpdates = 0;
+                    Active = true;
+
+                    // Create our injector and inject our stat module.
+                    // HM3.dll restores its hooks and unloads itself after the exit request.
+                    m_Injector = new Injector(m_GameProcess, false);
+                    m_Injector.InjectLibrary(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "HM3.dll"));
+
+                    // Setup our main control.
+                    MainApp.MainWindow.Dispatcher.Invoke(() =>
+                    {
+                        Control = new MainControl();
+                    });
+
+                    // Setup our engine-specific classes.
+                    StatTracker = new StatTracker(this);
+                    TimeTracker = new TimeTracker(this);
+
+                    // Update level labels.
+                    CurrentLevel = "No Level";
+                    CurrentLevelScene = "No Level";
+                    InGame = false;
+
+                    Control.SetCurrentLevel(CurrentLevel);
+                    Control.SetCurrentLevelScene(CurrentLevelScene);
+
+                    // Set our control in the main window.
+                    InitMenuItems();
+                    MainApp.MainWindow.SetEngineControl(Control, m_MenuItems);
                 }
-                catch (Exception)
+                catch (Exception s_Exception)
                 {
-                    m_GameProcess = null;
+                    Log.Exception("Failed to initialize the HM3 engine.", s_Exception);
+
                     Active = false;
+                    m_GameProcess = null;
+                    m_SkipUpdates = 4;
+
+                    if (Reader != null)
+                    {
+                        Reader.CloseHandle();
+                        Reader = null;
+                    }
+
+                    if (m_Injector != null)
+                    {
+                        m_Injector.Dispose();
+                        m_Injector = null;
+                    }
+
                     StatTracker.StatAddress = IntPtr.Zero;
                     StatTracker.DifficultyAddress = IntPtr.Zero;
-                    TimeTracker.TimeAddress = IntPtr.Zero;
+
+                    if (TimeTracker != null)
+                        TimeTracker.TimeAddress = IntPtr.Zero;
+
+                    StatTracker = null;
+                    TimeTracker = null;
+                    Control = null;
                 }
             }
 
@@ -355,6 +410,9 @@ namespace Statman.Engines
 
         public void OnMessage(string p_Type, string p_Data)
         {
+            if (!Active)
+                return;
+
             switch (p_Type)
             {
                 case "HI":
@@ -362,8 +420,7 @@ namespace Statman.Engines
                     // Received hello. Send relevant configuration messages.
                     
                     // Send Hitman 2016 data.
-                    var s_Hitman2016Data = System.IO.File.ReadAllText("HM3_locations.json");
-                    SendMessage("2J", s_Hitman2016Data);
+                    ReloadHitman2016Data();
 
                     // Send configuration values.
                     SendMessage("EC", Options.Get().HM3.Cheats ? "true" : "false");
@@ -393,8 +450,8 @@ namespace Statman.Engines
                         InGame = s_LevelData.Item3;
                     }
 
-                    Control.SetCurrentLevel(CurrentLevel);
-                    Control.SetCurrentLevelScene(CurrentLevelScene);
+                    Control?.SetCurrentLevel(CurrentLevel);
+                    Control?.SetCurrentLevelScene(CurrentLevelScene);
 
                     break;
                 }
@@ -422,10 +479,48 @@ namespace Statman.Engines
                 case "TA":
                 {
                     int timeAddr = 0;
-                    if (int.TryParse(p_Data, out timeAddr))
+                    if (TimeTracker != null && int.TryParse(p_Data, out timeAddr))
                     {
                         TimeTracker.TimeAddress = new IntPtr(timeAddr);
                     }
+                    break;
+                }
+
+                case "EC":
+                {
+                    var s_Enabled = p_Data == "true";
+                    Options.Update(opt => opt.HM3.Cheats = s_Enabled);
+                    SyncMenuItem("Enable Cheats", s_Enabled);
+                    break;
+                }
+
+                case "US":
+                {
+                    var s_Enabled = p_Data == "true";
+                    Options.Update(opt => opt.HM3.UnlimitedSaves = s_Enabled);
+                    SyncMenuItem("Unlimited Saves", s_Enabled);
+                    break;
+                }
+
+                case "H2":
+                {
+                    var s_Enabled = p_Data == "true";
+                    Options.Update(opt => opt.HM3.Hitman2016Mode = s_Enabled);
+                    SyncMenuItem("Hitman 2016 Mode", s_Enabled);
+                    break;
+                }
+
+                case "2D":
+                {
+                    var s_Enabled = p_Data == "true";
+                    Options.Update(opt => opt.HM3.Hitman2016DebugMode = s_Enabled);
+                    SyncMenuItem("Hitman 2016 Mode Debug", s_Enabled);
+                    break;
+                }
+
+                case "RL":
+                {
+                    ReloadHitman2016Data();
                     break;
                 }
             }

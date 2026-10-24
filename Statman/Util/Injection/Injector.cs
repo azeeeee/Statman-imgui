@@ -268,7 +268,7 @@ namespace Statman.Util.Injection
             {
                 Marshal.FreeHGlobal(s_UnmanagedPath); // free unmanaged string
                 Imports.CloseHandle(s_RemoteThreadHandle); // close thread from CreateRemoteThread
-                Imports.VirtualFreeEx(m_Process.Handle, s_PathMemoryPtr, 0, AllocationType.Release); // Free memory allocated
+                Imports.VirtualFreeEx(m_Handle, s_PathMemoryPtr, 0, AllocationType.Release); // Free memory allocated
             }
         }
 

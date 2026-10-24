@@ -3,13 +3,11 @@
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <Platform Condition=" '$(Platform)' == '' ">x86</Platform>
     <ProjectGuid>{4591C6E1-EB82-4541-8172-E13B8B42714D}</ProjectGuid>
     <OutputType>WinExe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Statman</RootNamespace>
-    <AssemblyName Condition="'$(Platform)'=='x86'">Statman</AssemblyName>
-    <AssemblyName Condition="'$(Platform)'=='x64'">Statman64</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <ProjectTypeGuids>{60dc8134-eba5-43b8-bcc9-bb4bc16c2548};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
@@ -41,34 +39,18 @@
   <PropertyGroup>
     <ApplicationIcon>Icon-256px.ico</ApplicationIcon>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
-    <DebugSymbols>true</DebugSymbols>
-    <OutputPath>..\_build\bin\Debug\</OutputPath>
-    <DefineConstants>TRACE;DEBUG;AMD64</DefineConstants>
-    <DebugType>full</DebugType>
-    <PlatformTarget>x64</PlatformTarget>
-    <ErrorReport>prompt</ErrorReport>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
-    <OutputPath>..\_build\bin\Release\</OutputPath>
-    <DefineConstants>TRACE;AMD64</DefineConstants>
-    <Optimize>true</Optimize>
-    <DebugType>pdbonly</DebugType>
-    <PlatformTarget>x64</PlatformTarget>
-    <ErrorReport>prompt</ErrorReport>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
-  </PropertyGroup>
   <PropertyGroup>
     <AssemblyName>Statman</AssemblyName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
     <DefineConstants>TRACE;DEBUG</DefineConstants>
     <OutputPath>..\_build\bin32\Debug\</OutputPath>
+    <PlatformTarget>x86</PlatformTarget>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x86'">
     <OutputPath>..\_build\bin32\Release\</OutputPath>
     <DefineConstants>TRACE</DefineConstants>
+    <PlatformTarget>x86</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
@@ -115,41 +97,7 @@
     <Reference Include="PresentationFramework" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Engines\HM52021Engine.cs" />
-    <Compile Include="Engines\HM52021\Controls\MainControl.xaml.cs">
-      <DependentUpon>MainControl.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Engines\HM52021\Windows\SceneLoader.xaml.cs">
-      <DependentUpon>SceneLoader.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Engines\HM5Engine.cs" />
-    <Compile Include="Engines\HM5\Controls\AdvancedRating.xaml.cs">
-      <DependentUpon>AdvancedRating.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Engines\HM5\Controls\MainControl.xaml.cs">
-      <DependentUpon>MainControl.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Engines\HM5\Controls\RatingChange.xaml.cs">
-      <DependentUpon>RatingChange.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Engines\HM5\Controls\VanillaRating.xaml.cs">
-      <DependentUpon>VanillaRating.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Engines\HM5\CustomTracker.cs" />
-    <Compile Include="Engines\HM5\CustomTracking\AmbianceValue.cs" />
-    <Compile Include="Engines\HM5\CustomTracking\DeadBodyData.cs" />
-    <Compile Include="Engines\HM5\CustomTracking\BodyFoundValue.cs" />
-    <Compile Include="Engines\HM5\CustomTracking\Events.cs" />
-    <Compile Include="Engines\HM5\CustomTracking\GameEvent.cs" />
-    <Compile Include="Engines\HM5\CustomTracking\KillData.cs" />
-    <Compile Include="Engines\HM5\CustomTracking\MurderedBodyValue.cs" />
-    <Compile Include="Engines\HM5\CustomTracking\SetPieceValue.cs" />
-    <Compile Include="Engines\HM5\StatTracker.cs" />
-    <Compile Include="Engines\HM5\Structs.cs" />
-    <Compile Include="Engines\HM5\TimeTracker.cs" />
-    <Compile Include="Engines\HM5\Windows\SceneLoader.xaml.cs">
-      <DependentUpon>SceneLoader.xaml</DependentUpon>
-    </Compile>
+    <Compile Include="Util\Log.cs" />
     <Compile Include="Util\Options.cs" />
     <Compile Include="Windows\UpdateWindow.xaml.cs">
       <DependentUpon>UpdateWindow.xaml</DependentUpon>
@@ -184,34 +132,6 @@
     <Compile Include="Util\Injection\Injector.cs" />
     <Compile Include="Util\ProcessMemoryReader.cs" />
     <Page Include="Engines\HM3\Controls\MainControl.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Engines\HM52021\Controls\MainControl.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Engines\HM52021\Windows\SceneLoader.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Engines\HM5\Controls\AdvancedRating.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Engines\HM5\Controls\MainControl.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Engines\HM5\Controls\RatingChange.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Engines\HM5\Controls\VanillaRating.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Engines\HM5\Windows\SceneLoader.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

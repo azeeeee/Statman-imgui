@@ -3,6 +3,12 @@
 
 #include "Utils.h"
 
+DECLARE_THISCALL_DETOUR(HM3Hooks, void, ZWINDOWS_Update, void* th)
+{
+	Overlay_SetZWINDOWSInstance(th);
+	o_ZWINDOWS_Update(th);
+}
+
 HM3Hooks::HM3Hooks() :
 	m_Installed(false)
 {
@@ -48,6 +54,35 @@ bool HM3Hooks::Install()
 		"\x53\x8B\x5C\x24\x08\x56\x8B\xF1\x3B\x5E\x6C",
 		"xxxxxxxxxxx"
 	)
+
+	{
+		uint8_t s_Pattern[] = "\x83\xEC\x08\x53\x55\x56\x8B\xF1\x8B\x06\x57\xFF\x90\x7C\x02\x00\x00";
+		m_ZWINDOWS_Update = reinterpret_cast<void*>(Utils::SearchPattern(g_Module->GetModuleBase(), g_Module->GetSizeOfCode(), s_Pattern, "xxxxxxxxxxxxxxxxx"));
+
+		if (m_ZWINDOWS_Update)
+		{
+			MH_STATUS s_Result = MH_CreateHook(m_ZWINDOWS_Update, &c_ZWINDOWS_Update, reinterpret_cast<LPVOID*>(&o_ZWINDOWS_Update));
+
+			if (s_Result != MH_OK)
+			{
+				Log("Failed to create hook for function 'ZWINDOWS_Update' with status %d.\n", s_Result);
+				m_ZWINDOWS_Update = nullptr;
+			}
+			else
+			{
+				s_Result = MH_EnableHook(m_ZWINDOWS_Update);
+
+				if (s_Result != MH_OK)
+					Log("Failed to install hook for 'ZWINDOWS_Update' with status %d.\n", s_Result);
+				else
+					Log("Successfully detoured 'ZWINDOWS_Update' at 0x%p.\n", m_ZWINDOWS_Update);
+			}
+		}
+		else
+		{
+			Log("Could not find address for function 'ZWINDOWS_Update'; game cursor freeze disabled.\n");
+		}
+	}
 
 	if (!HookD3D9())
 		return false;
@@ -131,9 +166,15 @@ void HM3Hooks::Uninstall()
 	REMOVE_HOOK(ZHM3LevelControl_FrameUpdate)
 	REMOVE_HOOK(ZHM3LevelControl_MissionCompleted2)
 	REMOVE_HOOK(ZLimitSaves_Click)
+	if (m_ZWINDOWS_Update)
+	{
+		REMOVE_HOOK(ZWINDOWS_Update)
+	}
 	REMOVE_HOOK(IDirect3DDevice9__EndScene)
 	REMOVE_HOOK(IDirect3DDevice9__Reset)
 	
 	if (MH_Uninitialize() != MH_OK)
+	{
 		Log("Failed to uninitialize MinHook.\n");
+	}
 }
