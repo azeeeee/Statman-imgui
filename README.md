@@ -1,6 +1,8 @@
 # Statman - Unofficial HM3 In-Game Overlay Fork
 Not affiliated with or endorsed by OrfeasZ or IO Interactive.
 
+![Overlay](https://i.imgur.com/6h4o83K.jpeg)
+
 An attempt of improving the in-game overlay from the original OrfeasZ's version.
 
 Heavily AI-Assisted code. Just like this README. 
@@ -27,11 +29,9 @@ This fork keeps Statman's original HM3 stat tracking and rating logic, but repla
 - Fonts are loaded from the Windows Fonts folder.
 - Hitman 2016 debug information is now rendered through the ImGui overlay.
 
-## Video showcase & Screenshots
+## Showcase
 
 [Click here to watch a video](https://www.youtube.com/watch?v=i1WjK6aLTNU)
-
-![Overlay](https://i.imgur.com/6h4o83K.jpeg)
 
 ![Overlay Menu](https://i.imgur.com/cHSAuXc.jpeg)
 
