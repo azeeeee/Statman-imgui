@@ -1,7 +1,7 @@
 # Statman - Unofficial HM3 In-Game Overlay Fork
 Not affiliated with or endorsed by OrfeasZ or IO Interactive.
 
-![Overlay](https://i.imgur.com/6h4o83K.jpeg)
+![Overlay](https://i.imgur.com/3dpTiPu.jpeg)
 
 An attempt of improving the in-game overlay from the original OrfeasZ's version.
 
