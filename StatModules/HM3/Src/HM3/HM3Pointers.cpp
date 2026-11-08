@@ -40,6 +40,46 @@ bool HM3Pointers::Setup()
 		2
 	)
 
+	FIND_POINTER_ABSOLUTE_OPTIONAL(
+		int32_t*,
+		g_bGodMode,
+		"\xA1\x00\x00\x00\x00\x85\xC0\x0F\x95\xC0\xC3",
+		"x????xxxxxx",
+		1
+	)
+
+	FIND_POINTER_ABSOLUTE_OPTIONAL(
+		int32_t*,
+		g_bInvisibleMode,
+		"\xA1\x00\x00\x00\x00\x85\xC0\x74\x0C\x66\x83\x7D\x14\x08",
+		"x????xxxxxxxxx",
+		1
+	)
+
+	FIND_POINTER_ABSOLUTE_OPTIONAL(
+		int32_t*,
+		g_bShowEnemyVision,
+		"\xA1\x00\x00\x00\x00\x85\xC0\x74\x05\xC6\x44\x24\x28\x00",
+		"x????xxxxxxxxx",
+		1
+	)
+
+	FIND_POINTER_ABSOLUTE_OPTIONAL(
+		int32_t*,
+		g_bShowOSD,
+		"\xA1\x00\x00\x00\x00\x85\xC0\x75\x0B\x5F\x5E\xB0\x01\x5D\x83\xC4\x3C\xC2\x08\x00",
+		"x????xxxxxxxxxxxxxx",
+		1
+	)
+
+	FIND_POINTER_ABSOLUTE_OPTIONAL(
+		int32_t*,
+		g_bInfClip,
+		"\xA1\x00\x00\x00\x00\x85\xC0\xB8\xE7\x03\x00\x00\x75\x06",
+		"x????xxxxxxxxx",
+		1
+	)
+
 	FIND_POINTER_ABSOLUTE(
 		void**,
 		g_pActionManager,
@@ -71,4 +111,6 @@ bool HM3Pointers::Setup()
 		"xx????x??xx",
 		2
 	)
+
+	return true;
 }

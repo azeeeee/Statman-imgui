@@ -25,11 +25,18 @@ bool HM3Hooks::Install()
 	if (m_Installed)
 		return true;
 
+	LogVerbose("Installing HM3 hooks (game module base 0x%p, code size 0x%x).\n",
+		reinterpret_cast<void*>(g_Module->GetModuleBase()), g_Module->GetSizeOfCode());
+
 	if (MH_Initialize() != MH_OK)
 	{
 		Log("Failed to initialize MinHook.\n");
 		return false;
 	}
+
+	// Mark as installed before touching any hook so Uninstall() always gets a chance
+	// to remove whatever was installed if a later step fails.
+	m_Installed = true;
 	
 	DECLARE_PATTERN_HOOK(
 		ZScene_Load,
@@ -84,17 +91,57 @@ bool HM3Hooks::Install()
 		}
 	}
 
+	// The Direct3D hooks are installed separately, once the game has loaded its first
+	// scene (see HM3Module::Init). Creating a dummy D3D9 device and detouring
+	// EndScene/Reset while the game is still bringing up its renderer means our detours
+	// end up inside the renderer's own initialisation, so they are deferred until the
+	// renderer is known to be running.
+	Log("Game hooks installed successfully.\n");
+
+	return true;
+}
+
+bool HM3Hooks::InstallD3D9Hooks()
+{
+	if (m_D3D9HooksInstalled)
+		return true;
+
+	m_D3D9HooksInstalled = true;
+
 	if (!HookD3D9())
+	{
+		Log("D3D9 hooks were not installed; the in-game overlay will be disabled.\n");
 		return false;
-	
-	m_Installed = true;
+	}
+
+	Log("D3D9 hooks installed successfully.\n");
 	return true;
 }
 
 bool HM3Hooks::HookD3D9()
 {
+	// Resolve Direct3DCreate9 lazily: see the note in HM3Hooks.h. At this point d3d9.dll
+	// is present because the game itself loaded it (or because the game is already
+	// running), never because of HM3.dll's import table.
+	HMODULE s_D3D9Module = GetModuleHandleA("d3d9.dll");
+
+	if (s_D3D9Module == nullptr)
+	{
+		Log("d3d9.dll is not loaded in the game yet. Stats overlay won't work.\n");
+		return false;
+	}
+
+	auto s_Direct3DCreate9 = reinterpret_cast<decltype(&Direct3DCreate9)>(
+		GetProcAddress(s_D3D9Module, "Direct3DCreate9"));
+
+	if (s_Direct3DCreate9 == nullptr)
+	{
+		Log("Could not resolve Direct3DCreate9 in d3d9.dll (%lu). Stats overlay won't work.\n", GetLastError());
+		return false;
+	}
+
 	// Create the D3D9 interface.
-	auto* s_D3D = Direct3DCreate9(D3D_SDK_VERSION);
+	auto* s_D3D = s_Direct3DCreate9(D3D_SDK_VERSION);
 
 	if (!s_D3D) {
 		Log("Could not create D3D9 interface. Stats overlay won't work.\n");

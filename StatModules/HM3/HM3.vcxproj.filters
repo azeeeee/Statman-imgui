@@ -30,6 +30,9 @@
     <ClInclude Include="Src\HM3\HM3Pointers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Src\HM3\Roulette.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Src\HM3\Structs\HM3NPC.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -96,6 +99,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Src\HM3\Overlay.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Src\HM3\Roulette.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -14,6 +14,144 @@
 #include <HM3/Structs/ZRender.h>
 
 #include <directxmath.h>
+#include <Pipeman.h>
+
+namespace
+{
+	// The level control keeps a live "weapon usage" container inline at +0x68.
+	// It tracks how many kills were made with each weapon template (ZREF).
+	// This is the same container the game's own weapon-kill getter iterates at
+	// 0x006ADF10; the special-rating code uses it before the mission ends.
+	constexpr uintptr_t c_LiveWeaponContainerOffset = 0x68;
+
+	struct LiveWeaponContainer
+	{
+		void* m_VTable;               // 0x0000 - container vtable
+		uint32_t* m_PresenceBits;     // 0x0004 - one bit per used slot
+		int32_t m_SlotCount;          // 0x0008 - number of slots (typically 128)
+		int32_t m_Capacity;           // 0x000C - allocated capacity
+		int32_t m_UsedCount;          // 0x0010 - number of occupied slots
+		int32_t m_Unknown01;          // 0x0014
+		void* m_Entries;              // 0x0018 - array of LiveWeaponEntry
+	};
+
+	struct LiveWeaponEntry
+	{
+		ZREF m_Ref;                   // 0x0000 - reference to the weapon template
+		int32_t m_Count;              // 0x0004 - kills made with this weapon
+	};
+
+	void UpdateLiveWeaponKills(ZHM3LevelControl* th)
+	{
+		// The container does not change every frame; reading it a few times per
+		// second is enough for the overlay and avoids calling into the game
+		// hundreds of times per second.
+		static int s_FrameCounter = 0;
+
+		if ((s_FrameCounter++ % 15) != 0)
+			return;
+
+		LiveWeaponKill s_Kills[HM3Module::c_MaxLiveWeaponKills];
+		int s_Count = 0;
+
+		auto* s_Container = reinterpret_cast<LiveWeaponContainer*>(
+			reinterpret_cast<char*>(th) + c_LiveWeaponContainerOffset);
+
+		if (!IsBadReadPtr(s_Container, sizeof(LiveWeaponContainer)) &&
+			s_Container->m_PresenceBits &&
+			s_Container->m_Entries &&
+			s_Container->m_SlotCount > 0 &&
+			s_Container->m_SlotCount <= HM3Module::c_MaxLiveWeaponKills &&
+			!IsBadReadPtr(s_Container->m_PresenceBits, (s_Container->m_SlotCount + 7) / 8) &&
+			!IsBadReadPtr(s_Container->m_Entries, s_Container->m_SlotCount * sizeof(LiveWeaponEntry)))
+		{
+			auto* s_Entries = reinterpret_cast<LiveWeaponEntry*>(s_Container->m_Entries);
+
+			for (int i = 0; i < s_Container->m_SlotCount; ++i)
+			{
+				if ((s_Container->m_PresenceBits[i >> 5] & (1u << (i & 31))) == 0)
+					continue;
+
+				const LiveWeaponEntry& s_Entry = s_Entries[i];
+
+				if (!s_Entry.m_Ref || s_Entry.m_Count <= 0)
+					continue;
+
+				auto* s_Object = g_Module->Functions()->ZGEOM_RefToPtr(s_Entry.m_Ref);
+
+				if (!s_Object || IsBadReadPtr(s_Object, sizeof(void*)))
+					continue;
+
+				auto** s_VTable = *reinterpret_cast<void***>(s_Object);
+
+				if (!s_VTable || IsBadReadPtr(&s_VTable[0x300 / 4], sizeof(void*)))
+					continue;
+
+				// Virtual getter used by the game itself to turn the weapon
+				// template object into its item/weapon ID.
+				using GetItemIdFn = int(__thiscall*)(void*);
+				const auto s_GetItemId = reinterpret_cast<GetItemIdFn>(s_VTable[0x300 / 4]);
+
+				if (!s_GetItemId)
+					continue;
+
+				const int s_ItemId = s_GetItemId(s_Object);
+
+				if (s_ItemId <= 0)
+					continue;
+
+				// Merge duplicate item IDs just in case the container ever
+				// tracks the same weapon through multiple slots.
+				bool s_Merged = false;
+
+				for (int j = 0; j < s_Count; ++j)
+				{
+					if (s_Kills[j].ItemId == s_ItemId)
+					{
+						s_Kills[j].Count += s_Entry.m_Count;
+						s_Merged = true;
+						break;
+					}
+				}
+
+				if (!s_Merged)
+				{
+					s_Kills[s_Count].ItemId = s_ItemId;
+					s_Kills[s_Count].Count = s_Entry.m_Count;
+					++s_Count;
+				}
+			}
+		}
+
+		g_Module->SetLiveWeaponKills(s_Kills, s_Count);
+
+		// Mirror the live weapon data to the Statman UI, which cannot resolve
+		// the weapon template references on its own. The message uses the compact
+		// "itemId:count,itemId:count" format and is sent a few times per second.
+		static DWORD s_LastPipeMessage = 0;
+		const DWORD s_Now = GetTickCount();
+
+		if (s_Now - s_LastPipeMessage >= 500)
+		{
+			std::string s_Data;
+
+			for (int i = 0; i < s_Count; ++i)
+			{
+				if (!s_Data.empty())
+					s_Data += ",";
+
+				s_Data += std::to_string(s_Kills[i].ItemId);
+				s_Data += ":";
+				s_Data += std::to_string(s_Kills[i].Count);
+			}
+
+			if (g_Module->Pipe())
+				g_Module->Pipe()->SendPipeMessage("LW", s_Data);
+
+			s_LastPipeMessage = s_Now;
+		}
+	}
+}
 
 DECLARE_THISCALL_DETOUR(HM3Hooks, void, ZHM3LevelControl_FrameUpdate, ZHM3LevelControl* th)
 {
@@ -28,10 +166,6 @@ DECLARE_THISCALL_DETOUR(HM3Hooks, void, ZHM3LevelControl_FrameUpdate, ZHM3LevelC
 
 	DetectionIterator s_DetectionIt;
 	s_Class02->InitDetectionIterator(&s_DetectionIt);
-
-	//Log("Class2: %p\n", s_Class02);
-
-	auto s_Hitman = (*g_Module->Pointers()->g_pGameData)->m_pHitman;
 
 	for (ZREF s_NPCID = s_Class02->NextDetectionNPC(&s_DetectionIt); s_DetectionIt.m_Unk01 > 0; s_NPCID = s_Class02->NextDetectionNPC(&s_DetectionIt))
 	{
@@ -73,118 +207,48 @@ DECLARE_THISCALL_DETOUR(HM3Hooks, void, ZHM3LevelControl_FrameUpdate, ZHM3LevelC
 			g_Module->Pointers()->ZHM3LevelControl__m_stats->m_SuitLeftOnLevel = false;
 	}
 
-	/*static int s_DidShit = 0;
-
-	if (GetAsyncKeyState(VK_F5) && s_Hitman)
-	{
-		if (s_DidShit >= (*g_Module->Pointers()->g_pGameData)->m_nActorCount)
-			s_DidShit = 0;
-
-		Log("Hitman: %p\n", s_Hitman);
-
-		auto s_TargetNpc = (*g_Module->Pointers()->g_pGameData)->m_aActors[s_DidShit++];
-		Log("Target NPC: %p\n", s_TargetNpc);
-
-		auto s_HitmanAs = s_TargetNpc->GetHitmanAs();
-		Log("Hitman as: %x\n", s_HitmanAs);
-
-		if (s_HitmanAs)
-		{
-			auto s_HitmanAsPtr = reinterpret_cast<ZHM3HmAs*>(g_Module->Functions()->ZGEOM_RefToPtr(s_HitmanAs));
-			Log("Hitman as ptr: %p\n", s_HitmanAsPtr);
-
-			if (s_HitmanAsPtr)
-			{
-				g_Module->Functions()->ZHitman3_ChangeIntoNewClothes(s_Hitman, s_HitmanAsPtr, s_TargetNpc, false, nullptr, 0);
-				//Log("Dog: %f\n", s_Hitman->GetHealth());
-			}
-		}
-
-		/*if ((*g_Module->Pointers()->g_pSysInterface)->m_pRenderer)
-		{
-			auto s_Renderer = (*g_Module->Pointers()->g_pSysInterface)->m_pRenderer;
-			auto s_MainCamera = s_Renderer->GetCamera(0);
-
-			if (s_MainCamera)
-			{
-				auto s_CameraPtr = reinterpret_cast<ZCAMERA*>(g_Module->Functions()->ZGEOM_RefToPtr(s_MainCamera));
-				Log("Camera ptr: %p\n", s_CameraPtr);
-
-				Log("Near: %f\n", s_CameraPtr->m_fNear);
-				Log("Far: %f\n", s_CameraPtr->m_fFar);
-				Log("FOV: %f\n", s_CameraPtr->GetFOV());
-				Log("View Aspect: %f\n", s_CameraPtr->GetViewAspect());
-
-				s_CameraPtr->SetFOV(120.0f);
-
-				//auto s_ProjectionMatrix = DirectX::XMMatrixPerspectiveFovLH(s_CameraPtr->GetFOV(), s_CameraPtr->GetViewAspect(), s_CameraPtr->m_fNear, s_CameraPtr->m_fFar);
-				
-			}
-		}#1#
-
-		//Sleep(500);
-	}*/
-	
-	// If we're in Hitman 2016 mode, and the level just loaded, check if the loaded scene partially matches any of the levels.
-	if (g_Module->Hitman2016Mode() && g_Module->m_SceneLoaded)
+	// Consume the scene-load event even when Hitman 2016 mode is disabled. This
+	// prevents a stale event from teleporting the player the moment the mode is
+	// enabled; a level load/restart is required instead.
+	if (g_Module->m_SceneLoaded)
 	{
 		g_Module->m_SceneLoaded = false;
 
-		Log("First frame after scene load. Trying to find a starting location.\n");
-
-		for (const auto& [s_Level, s_Locations] : g_Module->GetLevelStartingLocations())
+		if (g_Module->Hitman2016Mode())
 		{
-			auto s_LevelLower = s_Level;
-			std::transform(s_LevelLower.begin(), s_LevelLower.end(), s_LevelLower.begin(), ::tolower);
-
-			Log("Checking level %s with %d locations.\n", s_LevelLower.c_str(), s_Locations.size());
-			Log("Scene: %s\n", g_Module->m_SceneName.c_str());
-
-			// Check if s_Level is a substring of the loaded scene and if we have any locations for that level.
-			if (s_Locations.size() > 0 && g_Module->m_SceneName.find(s_LevelLower) != std::string::npos)
+			for (const auto& [s_Level, s_Locations] : g_Module->GetLevelStartingLocations())
 			{
-				// Pick a random location.
-				const auto s_Location = s_Locations[rand() % s_Locations.size()];
+				auto s_LevelLower = s_Level;
+				std::transform(s_LevelLower.begin(), s_LevelLower.end(), s_LevelLower.begin(), ::tolower);
 
-				Log("Selected starting location for level %s: %s\n", s_Level.c_str(), s_Location.Name.c_str());
+				// Check if s_Level is a substring of the loaded scene and if we have any locations for that level.
+				if (s_Locations.empty() || g_Module->m_SceneName.find(s_LevelLower) == std::string::npos)
+					continue;
 
-				// Try to get the actor with the given ID, and change hitman's outfit to theirs.
-				if (s_Location.Outfit >= 0 && s_Location.Outfit < (*g_Module->Pointers()->g_pGameData)->m_nActorCount)
+				// Restore the last location the user loaded for this level. If there
+				// is none, fall back to a random saved location.
+				const std::string s_LastLocation = g_Module->GetLastLocation(s_Level);
+				const LevelStartingLocation* s_Location = nullptr;
+
+				for (const auto& s_Candidate : s_Locations)
 				{
-					const auto s_Actor = (*g_Module->Pointers()->g_pGameData)->m_aActors[s_Location.Outfit];
-
-					if (s_Actor)
+					if (!s_LastLocation.empty() && s_Candidate.Name == s_LastLocation)
 					{
-						s_Actor->EnablePickupClothes();
-
-						if (auto s_HitmanAs = s_Actor->GetHitmanAs())
-						{
-							if (auto s_HitmanAsPtr = reinterpret_cast<ZHM3HmAs*>(g_Module->Functions()->ZGEOM_RefToPtr(s_HitmanAs)))
-							{
-								g_Module->Functions()->ZHitman3_ChangeIntoNewClothes(s_Hitman, s_HitmanAsPtr, nullptr, false, nullptr, 0);
-								auto s_Msg = (*g_Module->Pointers()->g_pSysInterface)->m_pEngineDb->RegisterZMsg("Hitman_ChangedClothes", 0, nullptr, 0);
-								(*g_Module->Pointers()->ZLIST__m_TrackLinkObjectsInstance)->SendCommandRecursive(s_Msg, nullptr, nullptr);
-							}
-						}
+						s_Location = &s_Candidate;
+						break;
 					}
 				}
 
-				// Update Hitman's position.
-				s_Hitman->m_pBaseGeom->m_pParent->m_mMat = s_Location.Rotation;
-				s_Hitman->m_pBaseGeom->m_pParent->m_vPos = s_Location.Position;
+				if (!s_Location)
+					s_Location = &s_Locations[rand() % s_Locations.size()];
+
+				g_Module->ApplyStartingLocation(*s_Location);
+
+				break;
 			}
 		}
 	}
 
-	/*for (int i = 0; i < (*g_Module->Pointers()->g_pGameData)->m_nActorCount; ++i)
-	{
-		auto s_Actor = (*g_Module->Pointers()->g_pGameData)->m_aActors[i];
-
-		if (s_Actor)
-		{
-			s_Actor->EnablePickupClothes();
-		}
-	}*/
-
-	return o_ZHM3LevelControl_FrameUpdate(th);
+	o_ZHM3LevelControl_FrameUpdate(th);
+	UpdateLiveWeaponKills(th);
 }

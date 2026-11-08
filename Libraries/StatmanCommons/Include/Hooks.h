@@ -15,7 +15,7 @@
 			if (s_Result != MH_OK) { \
 				Log("Failed to install hook for '" #name "' with status %d.\n", s_Result); \
 			} else { \
-				Log("Successfully detoured '" #name "' at 0x%p.\n", m_ ## name); \
+				LogVerbose("Successfully detoured '" #name "' at 0x%p.\n", m_ ## name); \
 			} \
 		} \
 	}
@@ -43,7 +43,7 @@
 				Log("Failed to install hook for function '" #name "' with status %d.\n", s_Result); \
 				return false; \
 			} else { \
-				Log("Successfully detoured '" #name "' at 0x%p.\n", m_ ## name); \
+				LogVerbose("Successfully detoured '" #name "' at 0x%p.\n", m_ ## name); \
 			} \
 		} \
 	}

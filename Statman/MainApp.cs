@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Threading;
 using Statman.Engines;
 using Statman.Network;
+using Statman.Util;
 using Statman.Windows;
 
 namespace Statman
@@ -18,6 +20,15 @@ namespace Statman
         {
             // Check for updates on start.
             CheckForUpdates = true;
+
+            try
+            {
+                Log.Info($"Statman started (pid {Process.GetCurrentProcess().Id}, " +
+                         $"version {typeof(MainApp).Assembly.GetName().Version}).");
+            }
+            catch
+            {
+            }
 
             // Initialize our main loop at 30Hz.
             Loop = new MainLoop(30);

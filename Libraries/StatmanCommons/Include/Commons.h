@@ -35,8 +35,18 @@
 #endif
 #endif
 
+// Appends to hm3.log next to Statman.exe/HM3.dll in both Debug and Release builds.
+// Release logging is required to diagnose end-user reports. Per-symbol and per-hook
+// detail is only written when verbose logging is enabled, either through the
+// STATMAN_VERBOSE=1 environment variable or at runtime via StatmanSetLogVerbose().
+void StatmanLog(const char* p_Format, ...);
+bool StatmanLogVerboseEnabled();
+void StatmanSetLogVerbose(bool p_Enabled);
+
 #ifdef _DEBUG
-#define Log(...) printf(__VA_ARGS__)
+#define Log(...) (StatmanLog(__VA_ARGS__), printf(__VA_ARGS__))
 #else
-#define Log(...)
+#define Log(...) StatmanLog(__VA_ARGS__)
 #endif
+
+#define LogVerbose(...) do { if (StatmanLogVerboseEnabled()) StatmanLog(__VA_ARGS__); } while (0)

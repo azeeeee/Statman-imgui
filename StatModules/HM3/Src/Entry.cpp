@@ -21,6 +21,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 
 void OnAttach()
 {
+	Log("HM3.dll attached (build %s %s).\n", __DATE__, __TIME__);
+
 	g_Module = new HM3Module();
 	
 	if (!g_Module->Init())

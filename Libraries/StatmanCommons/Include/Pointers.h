@@ -12,7 +12,7 @@
 		} \
 		\
 		field = reinterpret_cast<type>(Utils::GetRelativeAddr(s_Addr, offset)); \
-		Log("Found address for pointer '" #field "': 0x%p\n", field); \
+		LogVerbose("Found address for pointer '" #field "': 0x%p\n", field); \
 	}
 
 #define FIND_POINTER_ABSOLUTE(type, field, pattern, mask, offset) \
@@ -27,7 +27,23 @@
 		} \
 		\
 		field = reinterpret_cast<type>(Utils::GetAbsoluteAddr(s_Addr, offset)); \
-		Log("Found address for pointer '" #field "': 0x%p\n", field); \
+		LogVerbose("Found address for pointer '" #field "': 0x%p\n", field); \
+	}
+
+#define FIND_POINTER_ABSOLUTE_OPTIONAL(type, field, pattern, mask, offset) \
+	{ \
+		uint8_t s_Pattern[] = pattern; \
+		uintptr_t s_Addr = Utils::SearchPattern(g_Module->GetModuleBase(), g_Module->GetSizeOfCode(), s_Pattern, mask); \
+		\
+		if (s_Addr == 0) \
+		{ \
+			Log("Could not find optional pointer '" #field "'; the related feature will be unavailable.\n"); \
+		} \
+		else \
+		{ \
+			field = reinterpret_cast<type>(Utils::GetAbsoluteAddr(s_Addr, offset)); \
+			LogVerbose("Found address for optional pointer '" #field "': 0x%p\n", field); \
+		} \
 	}
 
 #define FIND_FUNCTION_POINTER(function, pattern, mask) \
@@ -42,5 +58,5 @@
 		} \
 		\
 		function = reinterpret_cast<function ## _t>(s_Addr); \
-		Log("Found address for function '" #function "': 0x%p\n", function); \
+		LogVerbose("Found address for function '" #function "': 0x%p\n", function); \
 	}

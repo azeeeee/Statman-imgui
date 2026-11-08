@@ -4,6 +4,13 @@ using System.Text;
 
 namespace Statman.Util.Injection
 {
+    // NOTE: This file is the Win32 interop catalogue carried over from the original
+    // injection utilities. Only a subset is used by Injector (OpenProcess, VM_*,
+    // CreateRemoteThread, EnumProcessModulesEx, GetModuleInformation, ...); the rest is
+    // kept so cross-architecture and future injection work does not have to re-add
+    // declarations. Unused entries are harmless but should not be "cleaned up" without
+    // checking Injector first.
+
     /// <summary>
     /// Memory allocation type - taken from #defines in WinNT.h
     /// </summary>

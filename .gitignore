@@ -172,3 +172,7 @@ External/lib/Pipeman64.lib
 .env
 .env.*
 !.env.example
+
+# Local game-data reference dumps; not part of the build or release.
+/items.txt
+/special_ratings.txt

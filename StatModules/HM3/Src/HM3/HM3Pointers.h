@@ -69,6 +69,11 @@ public:
 	HM3Stats* ZHM3LevelControl__m_stats = nullptr;
 	ZHM3GameData** g_pGameData = nullptr;
 	bool* CConfiguration__m_bCheatsEnabled = nullptr;
+	int32_t* g_bGodMode = nullptr;
+	int32_t* g_bInvisibleMode = nullptr;
+	int32_t* g_bShowEnemyVision = nullptr;
+	int32_t* g_bShowOSD = nullptr;
+	int32_t* g_bInfClip = nullptr;
 	ZSysInterface** g_pSysInterface = nullptr;
 	void** g_pActionManager = nullptr;
 	void** g_pSysInput = nullptr;

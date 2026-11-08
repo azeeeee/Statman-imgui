@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -21,6 +23,24 @@ struct LevelStartingLocation
 	SVector3 Position;
 };
 
+struct LiveWeaponKill
+{
+	int32_t ItemId;  // item ID (for example 4 = Custom_SniperRifle)
+	int32_t Count;   // kills made with this weapon in the current level
+};
+
+struct CheatState
+{
+	bool EnableCheats = false;
+	bool InfAmmo = false;
+	bool InfClip = false;
+	bool GodMode = false;
+	bool InvisibleMode = false;
+	bool ShowEnemyVision = false;
+	bool ShowOSD = true;
+	float TimeMultiplier = 1.0f;
+};
+
 class HM3Module
 {
 public:
@@ -40,10 +60,24 @@ public:
 public:
 	bool CheatsEnabled() const { return m_CheatsEnabled; }
 	bool UnlimitedSaves() const { return m_UnlimitedSaves; }
+	bool CheatsActive() const;
+	CheatState GetCheatState() const;
+	void SetCheatState(const CheatState& p_State);
 	bool Hitman2016Mode() const { return m_Hitman2016Mode; }
 	bool OverlayEnabled() const { return m_OverlayEnabled; }
 	bool Debug2016() const { return m_Debug2016; }
 	const std::unordered_map<std::string, std::vector<LevelStartingLocation>>& GetLevelStartingLocations() const { return m_LevelStartingLocations; }
+	bool ApplyStartingLocation(const LevelStartingLocation& p_Location);
+	bool ApplyOutfit(int p_ActorIndex);
+	bool GetPlayerTransform(SMatrix33& p_Rotation, SVector3& p_Position) const;
+	int GetCurrentOutfitIndex() const;
+	std::string GetCurrentLevelKey() const;
+	bool AddOrUpdateLocation(const std::string& p_Level, const LevelStartingLocation& p_Location);
+	bool DeleteLocation(const std::string& p_Level, const std::string& p_Name);
+	bool SetLastLocation(const std::string& p_Level, const std::string& p_Name);
+	std::string GetLastLocation(const std::string& p_Level) const;
+	bool SaveHitman2016Data();
+	bool ReloadHitman2016Data();
 
 	void SetCheatsEnabled(bool p_Enabled);
 	void SetUnlimitedSaves(bool p_Enabled);
@@ -72,8 +106,54 @@ protected:
 	bool m_Debug2016 = false;
 
 	std::unordered_map<std::string, std::vector<LevelStartingLocation>> m_LevelStartingLocations;
+	std::unordered_map<std::string, std::string> m_LevelLastLocations;
 
 public:
 	std::string m_SceneName = "";
 	bool m_SceneLoaded = false;
+
+	// Snapshot of the game's live per-weapon kill counters. It is written from
+	// the level-control frame update (game thread) and read by the overlay and
+	// the C# UI, so access is guarded by a mutex.
+	static constexpr int c_MaxLiveWeaponKills = 512;
+	mutable std::mutex m_LiveWeaponKillsMutex;
+	LiveWeaponKill m_LiveWeaponKills[c_MaxLiveWeaponKills];
+	int m_LiveWeaponKillCount = 0;
+
+	// Replaces the current snapshot. p_Kills may be null when p_Count is zero.
+	void SetLiveWeaponKills(const LiveWeaponKill* p_Kills, int p_Count)
+	{
+		std::lock_guard<std::mutex> s_Lock(m_LiveWeaponKillsMutex);
+
+		if (p_Count < 0)
+			p_Count = 0;
+
+		if (p_Count > c_MaxLiveWeaponKills)
+			p_Count = c_MaxLiveWeaponKills;
+
+		for (int i = 0; i < p_Count; ++i)
+			m_LiveWeaponKills[i] = p_Kills[i];
+
+		m_LiveWeaponKillCount = p_Count;
+	}
+
+	// Copies up to p_Max entries into p_Out and returns the number of entries copied.
+	int GetLiveWeaponKills(LiveWeaponKill* p_Out, int p_Max) const
+	{
+		std::lock_guard<std::mutex> s_Lock(m_LiveWeaponKillsMutex);
+
+		int s_Count = m_LiveWeaponKillCount;
+
+		if (s_Count > p_Max)
+			s_Count = p_Max;
+
+		for (int i = 0; i < s_Count; ++i)
+			p_Out[i] = m_LiveWeaponKills[i];
+
+		return s_Count;
+	}
+
+	// Set by the ZScene_Load detour. The Direct3D hooks are only installed after the
+	// first scene load, i.e. once the game's renderer is up and running.
+	std::atomic<bool> m_FirstSceneLoaded = false;
 };

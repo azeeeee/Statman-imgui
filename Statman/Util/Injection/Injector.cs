@@ -3,10 +3,9 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
-using System.Reflection.Emit;
 using System.Runtime.InteropServices;
 using System.Text;
+using Statman.Util;
 
 namespace Statman.Util.Injection
 {
@@ -212,6 +211,8 @@ namespace Statman.Util.Injection
             string s_FullPath = Path.GetFullPath(p_LibPath);
             string s_LibName = Path.GetFileName(s_FullPath);
 
+            Log.Verbose($"InjectLibrary: '{s_FullPath}' -> pid {m_Process.Id} ({m_Process.ProcessName}).");
+
             // declare resources that need to be freed in finally
             IntPtr s_PathMemoryPtr = IntPtr.Zero; // pointer to allocated memory of lib path string
             IntPtr s_RemoteThreadHandle = IntPtr.Zero; // handle to thread from CreateRemoteThread
@@ -221,10 +222,14 @@ namespace Statman.Util.Injection
             {
                 var s_ByteCount = (uint) Encoding.Unicode.GetByteCount(s_FullPath);
 
+                Log.Verbose($"Resolving LoadLibraryW in pid {m_Process.Id}...");
+
                 IntPtr s_LoadLibraryPtr = GetRemoteProcAddress(m_Process, "kernel32.dll", "LoadLibraryW");
 
                 if (s_LoadLibraryPtr == IntPtr.Zero)
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not resolve kernel32!LoadLibraryW in the target process (it may still be initializing).");
+
+                Log.Verbose($"LoadLibraryW resolved at 0x{s_LoadLibraryPtr.ToInt64():X}.");
 
                 // allocate memory to the local process for libFullPath
                 s_PathMemoryPtr = Imports.VirtualAllocEx(m_Handle, IntPtr.Zero, s_ByteCount, AllocationType.Commit, MemoryProtection.ReadWrite);
@@ -236,12 +241,10 @@ namespace Statman.Util.Injection
                 if (!Imports.WriteProcessMemory(m_Handle, s_PathMemoryPtr, s_UnmanagedPath, s_ByteCount, out var s_BytesWritten) || s_BytesWritten != (int)s_ByteCount)
                     throw new Win32Exception(Marshal.GetLastWin32Error());
 
-                Debug.WriteLine(Marshal.GetLastWin32Error());
+                Log.Verbose($"Calling LoadLibraryW(\"{s_FullPath}\") in pid {m_Process.Id}.");
 
                 // load dll via call to LoadLibrary using CreateRemoteThread
                 s_RemoteThreadHandle = Imports.CreateRemoteThread(m_Handle, IntPtr.Zero, 0, s_LoadLibraryPtr, s_PathMemoryPtr, 0, IntPtr.Zero);
-
-                Debug.WriteLine(Marshal.GetLastWin32Error());
 
                 if (s_RemoteThreadHandle == IntPtr.Zero)
                     throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -253,6 +256,8 @@ namespace Statman.Util.Injection
                 if (!Imports.GetExitCodeThread(s_RemoteThreadHandle, out IntPtr s_ModuleHandle))
                     throw new Win32Exception(Marshal.GetLastWin32Error());
 
+                Log.Verbose($"Remote LoadLibrary returned 0x{s_ModuleHandle.ToInt64():X}.");
+
                 if (s_ModuleHandle == IntPtr.Zero)
                     throw new Exception("Code executed properly, but unable to get an appropriate module handle, possible Win32Exception", new Win32Exception(Marshal.GetLastWin32Error()));
 
@@ -261,6 +266,8 @@ namespace Statman.Util.Injection
 
                 if (s_LoadedModule == null)
                     throw new Exception("Injected module could not be found within the target process!");
+
+                Log.Verbose($"'{s_LibName}' mapped at 0x{s_LoadedModule.Info.lpBaseOfDll.ToInt64():X} (size 0x{s_LoadedModule.Info.SizeOfImage:X}).");
 
                 m_InjectedModules.Add(s_LibName, s_LoadedModule);
             }
@@ -278,6 +285,11 @@ namespace Statman.Util.Injection
         /// relative path was used and the program's working directory has changed.
         /// </summary>
         /// <param name="p_LibName">The name of the module to eject</param>
+        /// <remarks>
+        /// Not used by HM3Engine: the stat module unbinds its hooks and unloads itself when it
+        /// receives the "XX" stop message, so HM3Engine constructs the Injector with
+        /// EjectOnDispose = false. Kept for tools and future engines that cannot self-unload.
+        /// </remarks>
         public void EjectLibrary(string p_LibName)
         {
             string s_LibSearchName = File.Exists(p_LibName) ? Path.GetFileName(Path.GetFullPath(p_LibName)) : p_LibName;

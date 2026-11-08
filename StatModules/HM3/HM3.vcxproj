@@ -101,6 +101,7 @@
     <ClInclude Include="Src\HM3\HM3Functions.h" />
     <ClInclude Include="Src\HM3\HM3Hooks.h" />
     <ClInclude Include="Src\HM3\HM3Pointers.h" />
+    <ClInclude Include="Src\HM3\Roulette.h" />
     <ClInclude Include="Src\HM3\Structs\GUIElement.h" />
     <ClInclude Include="Src\HM3\Structs\LimitSavesElement.h" />
     <ClInclude Include="Src\HM3\Structs\ZCore.h" />
@@ -121,6 +122,7 @@
     <ClCompile Include="$(SolutionDir)External\modules\imgui\backends\imgui_impl_dx9.cpp" />
     <ClCompile Include="$(SolutionDir)External\modules\imgui\backends\imgui_impl_win32.cpp" />
     <ClCompile Include="Src\HM3\Overlay.cpp" />
+    <ClCompile Include="Src\HM3\Roulette.cpp" />
     <ClCompile Include="Src\Entry.cpp" />
     <ClCompile Include="Src\HM3\HM3Module.cpp" />
     <ClCompile Include="Src\HM3\HM3Functions.cpp" />
@@ -134,6 +136,16 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+  <!-- HM3.pdb is only useful for crash analysis. Move it out of the release
+       output so the application folder contains nothing but shipped files.
+       Debug builds keep their symbols next to the module for debugging. -->
+  <Target Name="MoveSymbolsToBuildFolder" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <_StatmanSymbols Include="$(OutDir)*.pdb" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutDir)..\..\symbols\$(Configuration)\" />
+    <Move SourceFiles="@(_StatmanSymbols)" DestinationFolder="$(OutDir)..\..\symbols\$(Configuration)\" Condition="'@(_StatmanSymbols)' != ''" />
+  </Target>
 </Project>
 
 

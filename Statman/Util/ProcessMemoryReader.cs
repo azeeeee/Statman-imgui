@@ -4,6 +4,9 @@ using System.Runtime.InteropServices;
 
 namespace Statman.Util
 {
+    /// <summary>
+    /// Read-only memory access to a target process.
+    /// </summary>
     public class ProcessMemoryReader
     {
         [DllImport("kernel32.dll")]
@@ -26,7 +29,7 @@ namespace Statman.Util
 
         public bool OpenProcess()
         {
-            m_Process = OpenProcess(0x0010 /* PROCESS_VM_READ */, 1, (uint) Process.Id);
+            m_Process = OpenProcess(0x0010 /* PROCESS_VM_READ */, 0, (uint) Process.Id);
             return m_Process != IntPtr.Zero;
         }
 

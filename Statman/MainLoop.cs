@@ -28,8 +28,12 @@ namespace Statman
         public void Dispose()
         {
             m_Running = false;
-            m_Thread?.Abort();
-            m_Thread?.Join();
+
+            // Cooperative stop: the loop finishes its current tick and exits. The thread is
+            // a background thread, so a slow tick (e.g. the update check HTTP request) can
+            // never keep the process alive.
+            m_Thread?.Join(2000);
+            m_Thread = null;
         }
 
         public void Start()
@@ -39,7 +43,10 @@ namespace Statman
 
             m_Running = true;
 
-            m_Thread = new Thread(DoLoopWork);
+            m_Thread = new Thread(DoLoopWork)
+            {
+                IsBackground = true,
+            };
             m_Thread.SetApartmentState(ApartmentState.STA);
             m_Thread.Start();
         }
@@ -71,7 +78,15 @@ namespace Statman
                     // Check for updates.
                     MainApp.MainWindow.SetStatusLabel("Checking for updates...");
 
-                    if (UpdateChecker.HasNewerVersion(out var s_CurrentVersion, out var s_LatestVersion, out var s_ReleaseURL, out var s_PreRelease))
+                    var s_UpdateCheck = Stopwatch.StartNew();
+
+                    var s_HasUpdate = UpdateChecker.HasNewerVersion(out var s_CurrentVersion, out var s_LatestVersion, out var s_ReleaseURL, out var s_PreRelease);
+
+                    s_UpdateCheck.Stop();
+
+                    Log.Info($"Update check finished in {s_UpdateCheck.ElapsedMilliseconds} ms (update available: {s_HasUpdate}).");
+
+                    if (s_HasUpdate)
                     {
                         MainApp.MainWindow.Dispatcher.Invoke(() =>
                         {

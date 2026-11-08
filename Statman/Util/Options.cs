@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
@@ -26,6 +25,9 @@ namespace Statman.Util
         public bool Hitman2016DebugMode { get; set; } = false;
 
         [DataMember]
+        public bool PredictSpecialRatings { get; set; } = false;
+
+        [DataMember]
         public bool Overlay { get; set; } = true;
     }
 
@@ -34,6 +36,9 @@ namespace Statman.Util
     {
         [DataMember]
         public bool DarkMode { get; set; } = false;
+
+        [DataMember]
+        public bool VerboseLogging { get; set; } = false;
 
         [DataMember]
         public HM3Options HM3 { get; set; } = new HM3Options();
@@ -46,8 +51,11 @@ namespace Statman.Util
 
         static Options()
         {
-            m_OptionsPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "statman.json");
+            Paths.MigrateLegacyConfig("statman.json");
+
+            m_OptionsPath = Paths.ConfigFile("statman.json");
             m_Options = ParseOptions();
+            Log.VerboseEnabled = m_Options.VerboseLogging;
         }
 
         private static StatmanOptions ParseOptions() 
@@ -85,6 +93,8 @@ namespace Statman.Util
         {
             try
             {
+                Directory.CreateDirectory(Path.GetDirectoryName(m_OptionsPath));
+
                 using (var s_Stream = File.Create(m_OptionsPath))
                 {
                     var s_Serializer = new DataContractJsonSerializer(typeof (StatmanOptions));

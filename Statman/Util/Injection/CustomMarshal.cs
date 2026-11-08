@@ -7,6 +7,11 @@ using System.Text;
 
 namespace Statman.Util.Injection
 {
+    // NOTE: Custom marshalling helper for structures containing raw pointers, inherited
+    // from the original injection utilities. It is not referenced by Injector or the HM3
+    // engine today; kept intact for tools that need to pass pointer-bearing structures
+    // between processes. Safe to delete only together with CustomMarshalAttribute.cs and
+    // CustomMarshalAsAttribute.cs.
     public static class CustomMarshal
     {
         /// <summary>

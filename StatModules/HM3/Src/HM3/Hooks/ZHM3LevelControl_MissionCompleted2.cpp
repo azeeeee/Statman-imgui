@@ -22,24 +22,6 @@ DECLARE_THISCALL_DETOUR(HM3Hooks, int, ZHM3LevelControl_MissionCompleted2, ZHM3L
 	{
 		auto s_GameData = *g_Module->Pointers()->g_pGameData;
 
-		/*auto s_WeaponsInHand = 0;
-
-		if (s_Class03 && th->m_Unknown03 && s_Class03->m_Unknown02)
-		{
-			g_Module->Functions()->UnknownFunction01(th->m_Unknown03, s_Class03->m_Unknown02);
-			s_WeaponsInHand += g_Module->Functions()->UnknownFunction02(th->m_Unknown03);
-		}
-
-		if (s_Class03 && th->m_Unknown04 && s_Class03->m_Unknown02)
-		{
-			g_Module->Functions()->UnknownFunction01(th->m_Unknown04, s_Class03->m_Unknown02);
-			s_WeaponsInHand += g_Module->Functions()->UnknownFunction02(th->m_Unknown04);
-		}
-
-		// Set necessary values for disabling items.
-		if (g_Module->Pointers()->m_Stats)
-			th->m_WeaponsLeftOnLevel = s_WeaponsInHand - g_Module->Functions()->GetNPCWeaponCount();*/
-
 		if (s_GameData && s_GameData->m_pHitman)
 			s_GameData->m_pHitman->m_Unknown01 = s_GameData->m_pHitman->m_Unknown02 = nullptr;
 	}

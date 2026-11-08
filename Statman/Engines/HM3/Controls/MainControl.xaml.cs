@@ -42,14 +42,14 @@ namespace Statman.Engines.HM3.Controls
             });
         }
 
-        public void SetRating(string p_Rating, bool p_Perfect, bool p_CheatWarning)
+        public void SetRating(string p_Rating, bool p_Perfect, bool p_CheatWarning, bool p_Special = false)
         {
             Dispatcher.Invoke(() =>
             {
                 var s_Text = new TextBlock();
                 s_Text.Inlines.Add(new Run(p_Rating)
                 {
-                    Foreground = (Brush) FindResource(p_Perfect ? "LabelBrush" : "AlertLabelBrush")
+                    Foreground = (Brush) FindResource(p_Special ? "SpecialRatingBrush" : (p_Perfect ? "LabelBrush" : "AlertLabelBrush"))
                 });
 
                 if (p_CheatWarning)

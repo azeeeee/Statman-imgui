@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using PeNet.Header.Net.MetaDataTables;
 using Statman.Engines.HM3;
 using Statman.Engines.HM3.Controls;
 using Statman.Network;
@@ -105,6 +104,126 @@ namespace Statman.Engines
 
         public string Name { get { return "H3"; } }
         public bool Active { get; private set; }
+        public IntPtr GameModuleBase { get; private set; }
+
+        // Live per-weapon kill counts for the current level, keyed by item ID.
+        // They are pushed by the native module's "LW" message and read by StatTracker.
+        private readonly object m_LiveWeaponLock = new object();
+        private Dictionary<int, int> m_LiveWeaponKills = new Dictionary<int, int>();
+
+        // Returns a copy so callers can use the data without holding the lock.
+        public Dictionary<int, int> GetLiveWeaponKills()
+        {
+            lock (m_LiveWeaponLock)
+                return new Dictionary<int, int>(m_LiveWeaponKills);
+        }
+
+        // Parses the native "itemId:count,itemId:count" payload. An empty
+        // payload clears the snapshot, which happens on every scene load.
+        public void SetLiveWeaponKills(string p_Data)
+        {
+            var s_Kills = new Dictionary<int, int>();
+
+            if (!string.IsNullOrEmpty(p_Data))
+            {
+                foreach (var s_Entry in p_Data.Split(','))
+                {
+                    var s_Parts = s_Entry.Split(':');
+
+                    if (s_Parts.Length == 2 &&
+                        int.TryParse(s_Parts[0], out var s_ItemId) &&
+                        int.TryParse(s_Parts[1], out var s_Count))
+                    {
+                        s_Kills[s_ItemId] = s_Count;
+                    }
+                }
+            }
+
+            lock (m_LiveWeaponLock)
+                m_LiveWeaponKills = s_Kills;
+        }
+
+        // Returns true when the game itself has any built-in trainer flag active.
+        // This stays true even if the main "Enable cheats" flag has been turned off
+        // while individual cheats are still enabled.
+        public bool CheatsActive()
+        {
+            try
+            {
+                if (Reader == null)
+                    return false;
+
+                var s_Base = GameModuleBase != IntPtr.Zero ? GameModuleBase.ToInt32() : 0x00400000;
+
+                byte[] ReadRva(int p_Rva, int p_Count)
+                {
+                    return Reader.Read(new IntPtr(s_Base + (p_Rva - 0x00400000)), p_Count);
+                }
+
+                int ReadRvaInt(int p_Rva)
+                {
+                    var s_Data = ReadRva(p_Rva, 4);
+                    return s_Data == null ? 0 : BitConverter.ToInt32(s_Data, 0);
+                }
+
+                var s_CheatsEnabled = ReadRva(0x008ABA89, 1);
+
+                if (s_CheatsEnabled != null && s_CheatsEnabled[0] != 0)
+                    return true;
+
+                if (ReadRvaInt(0x0099B344) != 0) return true; // God mode
+                if (ReadRvaInt(0x0099B840) != 0) return true; // Invisible mode
+                if (ReadRvaInt(0x0099B848) != 0) return true; // Show enemy vision
+                if (ReadRvaInt(0x0099A928) != 0) return true; // Infinite clip
+
+                // The OSD is expected to be on. Disabling the game's HUD is
+                // treated as a cheat; only flag it when the read succeeds.
+                var s_OsdData = ReadRva(0x008031D0, 4);
+
+                if (s_OsdData != null && BitConverter.ToInt32(s_OsdData, 0) == 0)
+                    return true;
+
+                var s_SysData = ReadRva(0x0081F820, 4);
+
+                if (s_SysData == null)
+                    return false;
+
+                var s_Sys = BitConverter.ToUInt32(s_SysData, 0);
+
+                if (s_Sys == 0)
+                    return false;
+
+                var s_DbData = Reader.Read(new IntPtr((int)(s_Sys + 0xB8)), 4);
+
+                if (s_DbData != null)
+                {
+                    var s_Db = BitConverter.ToUInt32(s_DbData, 0);
+
+                    if (s_Db != 0)
+                    {
+                        var s_InfAmmo = Reader.Read(new IntPtr((int)(s_Db + 0xB4)), 4);
+
+                        if (s_InfAmmo != null && BitConverter.ToInt32(s_InfAmmo, 0) != 0)
+                            return true;
+                    }
+                }
+
+                var s_TimeData = Reader.Read(new IntPtr((int)(s_Sys + 0xB28)), 4);
+
+                if (s_TimeData != null)
+                {
+                    var s_Multiplier = BitConverter.ToSingle(s_TimeData, 0);
+
+                    if (s_Multiplier < 0.999f || s_Multiplier > 1.001f)
+                        return true;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
 
         public ProcessMemoryReader Reader { get; private set; }
 
@@ -122,6 +241,23 @@ namespace Statman.Engines
         private Injector m_Injector;
 
         private uint m_SkipUpdates;
+
+        // The game is a Steam DRM packed executable that decrypts itself on startup.
+        // Injecting before that finishes can corrupt the process, so wait until the
+        // executable has demonstrably unpacked itself before touching it.
+        private const int ReadyTimeoutMs = 3000;
+
+        private DateTime m_AttachStarted;
+        private DateTime m_GameStartedAt;
+        private DateTime m_LastProcessProbe;
+        private string m_LastReadinessLog;
+        private bool m_EntryPointChecked;
+        private bool m_EntryPointLooksPacked;
+        private bool m_ModuleListLogged;
+        private bool m_HasD3D9;
+        private bool m_HasBink;
+        private bool m_HasWindow;
+        private string m_ModuleError;
 
         private readonly List<Control> m_MenuItems; 
 
@@ -178,6 +314,33 @@ namespace Statman.Engines
 
                 s_Hitman2016Debug.Click += OnHitman2016DebugMode;
 
+                var s_PredictSpecialRatings = new MenuItem()
+                {
+                    Header = "Predict Special Ratings [Experimental]",
+                    IsCheckable = true,
+                    IsChecked = Options.Get().HM3.PredictSpecialRatings,
+                };
+
+                s_PredictSpecialRatings.Click += OnPredictSpecialRatings;
+
+                var s_VerboseLogging = new MenuItem()
+                {
+                    Header = "Verbose logging (diagnostics)",
+                    IsCheckable = true,
+                    IsChecked = Options.Get().VerboseLogging,
+                    ToolTip = "Write detailed diagnostic lines to statman.log and hm3.log. Useful when reporting a problem.",
+                };
+
+                s_VerboseLogging.Click += OnVerboseLogging;
+
+                var s_OpenLogFolder = new MenuItem()
+                {
+                    Header = "Open log folder",
+                    ToolTip = "Open the folder containing Statman.exe, statman.log and hm3.log.",
+                };
+
+                s_OpenLogFolder.Click += OnOpenLogFolder;
+
                 var s_IngameOverlay = new MenuItem()
                 {
                     Header = "In-game Overlay",
@@ -194,6 +357,10 @@ namespace Statman.Engines
                 m_MenuItems.Add(s_Hitman2016);
                 m_MenuItems.Add(s_ReloadHitman2016);
                 m_MenuItems.Add(s_Hitman2016Debug);
+                m_MenuItems.Add(s_PredictSpecialRatings);
+                m_MenuItems.Add(new Separator());
+                m_MenuItems.Add(s_VerboseLogging);
+                m_MenuItems.Add(s_OpenLogFolder);
             });
         }
 
@@ -234,7 +401,9 @@ namespace Statman.Engines
         {
             try
             {
-                var s_Hitman2016Data = System.IO.File.ReadAllText("HM3_locations.json");
+                Paths.MigrateLegacyConfig("HM3_locations.json");
+
+                var s_Hitman2016Data = System.IO.File.ReadAllText(Paths.ConfigFile("HM3_locations.json"));
                 SendMessage("2J", s_Hitman2016Data);
             }
             catch (Exception s_Exception)
@@ -257,6 +426,50 @@ namespace Statman.Engines
 
             SendMessage("2D", s_MenuItem.IsChecked ? "true" : "false");
             Options.Update(opt => opt.HM3.Hitman2016DebugMode = s_MenuItem.IsChecked);
+        }
+
+        private void OnPredictSpecialRatings(object p_Sender, RoutedEventArgs p_RoutedEventArgs)
+        {
+            var s_MenuItem = p_Sender as MenuItem;
+
+            if (s_MenuItem == null)
+                return;
+
+            Options.Update(opt => opt.HM3.PredictSpecialRatings = s_MenuItem.IsChecked);
+        }
+
+        private void OnVerboseLogging(object p_Sender, RoutedEventArgs p_RoutedEventArgs)
+        {
+            var s_MenuItem = p_Sender as MenuItem;
+
+            if (s_MenuItem == null)
+                return;
+
+            var s_Enabled = s_MenuItem.IsChecked;
+
+            Log.VerboseEnabled = s_Enabled;
+            Options.Update(opt => opt.VerboseLogging = s_Enabled);
+            SendMessage("VL", s_Enabled ? "true" : "false");
+
+            Log.Info($"Verbose logging {(s_Enabled ? "enabled" : "disabled")}.");
+        }
+
+        private void OnOpenLogFolder(object p_Sender, RoutedEventArgs p_RoutedEventArgs)
+        {
+            try
+            {
+                Directory.CreateDirectory(Log.DirectoryPath);
+
+                Process.Start(new ProcessStartInfo()
+                {
+                    FileName = Log.DirectoryPath,
+                    UseShellExecute = true,
+                });
+            }
+            catch (Exception s_Exception)
+            {
+                Log.Exception("Could not open the log folder", s_Exception);
+            }
         }
 
         private void OnIngameOverlay(object p_Sender, RoutedEventArgs p_RoutedEventArgs)
@@ -297,20 +510,7 @@ namespace Statman.Engines
 
                 m_SkipUpdates = 4;
 
-                m_GameProcess = null;
-                Active = false;
-
-                if (Reader != null)
-                {
-                    Reader.CloseHandle();
-                    Reader = null;
-                }
-
-                if (m_Injector != null)
-                {
-                    m_Injector.Dispose();
-                    m_Injector = null;
-                }
+                Detach();
 
                 var s_Processes = Process.GetProcessesByName("HitmanBloodMoney");
 
@@ -319,84 +519,42 @@ namespace Statman.Engines
 
                 // We always select the first process.
                 m_GameProcess = s_Processes[0];
-
-                // Setup our Memory Reader.
-                Reader = new ProcessMemoryReader(m_GameProcess);
+                m_AttachStarted = DateTime.UtcNow;
+                m_LastProcessProbe = DateTime.MinValue;
 
                 try
                 {
-                    if (!Reader.OpenProcess())
-                    {
-                        Reader = null;
-                        m_GameProcess = null;
-                        return;
-                    }
-
-                    m_SkipUpdates = 0;
-                    Active = true;
-
-                    // Create our injector and inject our stat module.
-                    // HM3.dll restores its hooks and unloads itself after the exit request.
-                    m_Injector = new Injector(m_GameProcess, false);
-                    m_Injector.InjectLibrary(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "HM3.dll"));
-
-                    // Setup our main control.
-                    MainApp.MainWindow.Dispatcher.Invoke(() =>
-                    {
-                        Control = new MainControl();
-                    });
-
-                    // Setup our engine-specific classes.
-                    StatTracker = new StatTracker(this);
-                    TimeTracker = new TimeTracker(this);
-
-                    // Update level labels.
-                    CurrentLevel = "No Level";
-                    CurrentLevelScene = "No Level";
-                    InGame = false;
-
-                    Control.SetCurrentLevel(CurrentLevel);
-                    Control.SetCurrentLevelScene(CurrentLevelScene);
-
-                    // Set our control in the main window.
-                    InitMenuItems();
-                    MainApp.MainWindow.SetEngineControl(Control, m_MenuItems);
+                    GameModuleBase = m_GameProcess.MainModule.BaseAddress;
                 }
-                catch (Exception s_Exception)
+                catch
                 {
-                    Log.Exception("Failed to initialize the HM3 engine.", s_Exception);
-
-                    Active = false;
-                    m_GameProcess = null;
-                    m_SkipUpdates = 4;
-
-                    if (Reader != null)
-                    {
-                        Reader.CloseHandle();
-                        Reader = null;
-                    }
-
-                    if (m_Injector != null)
-                    {
-                        m_Injector.Dispose();
-                        m_Injector = null;
-                    }
-
-                    StatTracker.StatAddress = IntPtr.Zero;
-                    StatTracker.DifficultyAddress = IntPtr.Zero;
-
-                    if (TimeTracker != null)
-                        TimeTracker.TimeAddress = IntPtr.Zero;
-
-                    StatTracker = null;
-                    TimeTracker = null;
-                    Control = null;
+                    GameModuleBase = IntPtr.Zero;
                 }
+
+                try
+                {
+                    m_GameStartedAt = m_GameProcess.StartTime;
+                }
+                catch
+                {
+                    m_GameStartedAt = DateTime.MinValue;
+                }
+
+                var s_Age = m_GameStartedAt == DateTime.MinValue
+                    ? "age unknown"
+                    : $"{(int) (DateTime.Now - m_GameStartedAt).TotalMilliseconds} ms old";
+
+                Log.Info($"HitmanBloodMoney.exe detected (pid {m_GameProcess.Id}, {s_Age}). " +
+                         "Waiting for the game to finish initializing before injecting.");
             }
 
             if (!Active)
+            {
+                // Injection is deferred until the game has unpacked itself.
+                TryAttach();
                 return;
-            
+            }
+
             // Update our trackers.
             TimeTracker.Update();
             StatTracker.Update();
@@ -406,6 +564,295 @@ namespace Statman.Engines
                 Control.SetCurrentTime(StatTracker.CurrentStats.m_Time);
             else
                 Control.SetCurrentTime(TimeTracker.CurrentTime);
+        }
+
+        private void TryAttach()
+        {
+            if (m_GameProcess == null)
+                return;
+
+            try
+            {
+                if (Reader == null)
+                {
+                    Reader = new ProcessMemoryReader(m_GameProcess);
+
+                    if (!Reader.OpenProcess())
+                    {
+                        Reader = null;
+                        m_GameProcess = null;
+                        m_SkipUpdates = 4;
+
+                        Log.Info("Could not open HitmanBloodMoney.exe for reading; will retry.");
+                        return;
+                    }
+                }
+
+                var s_Ready = IsGameReady(out var s_Readiness, out var s_ReadinessKey);
+
+                if (s_ReadinessKey != m_LastReadinessLog)
+                {
+                    m_LastReadinessLog = s_ReadinessKey;
+
+                    Log.Info(s_Ready
+                        ? $"Game looks ready for injection ({s_Readiness})."
+                        : $"Waiting to inject ({s_Readiness}).");
+                }
+
+                if (!s_Ready)
+                    return;
+
+                // The game can exit between the readiness poll and the injection attempt.
+                if (m_GameProcess.HasExited)
+                {
+                    Log.Info("The game exited before HM3.dll could be injected.");
+
+                    Detach();
+
+                    m_SkipUpdates = 4;
+                    return;
+                }
+
+                var s_ModulePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "HM3.dll");
+
+                Log.Info($"Injecting '{s_ModulePath}' into pid {m_GameProcess.Id}.");
+
+                // Create our injector and inject our stat module.
+                // HM3.dll restores its hooks and unloads itself after the exit request.
+                m_Injector = new Injector(m_GameProcess, false);
+                m_Injector.InjectLibrary(s_ModulePath);
+
+                Log.Info("HM3.dll injected.");
+
+                // Setup our main control.
+                MainApp.MainWindow.Dispatcher.Invoke(() =>
+                {
+                    Control = new MainControl();
+                });
+
+                // Setup our engine-specific classes.
+                StatTracker = new StatTracker(this);
+                TimeTracker = new TimeTracker(this);
+
+                // Update level labels.
+                CurrentLevel = "No Level";
+                CurrentLevelScene = "No Level";
+                InGame = false;
+
+                Control.SetCurrentLevel(CurrentLevel);
+                Control.SetCurrentLevelScene(CurrentLevelScene);
+
+                // Set our control in the main window.
+                InitMenuItems();
+                MainApp.MainWindow.SetEngineControl(Control, m_MenuItems);
+
+                m_SkipUpdates = 0;
+                Active = true;
+
+                Log.Info("HM3 engine active.");
+            }
+            catch (Exception s_Exception)
+            {
+                Log.Exception("Failed to initialize the HM3 engine.", s_Exception);
+
+                Detach();
+
+                m_SkipUpdates = 4;
+            }
+        }
+
+        private bool IsGameReady(out string p_Readiness, out string p_ReadinessKey)
+        {
+            // Enumerating modules and querying MainWindowHandle are comparatively expensive,
+            // so they are refreshed at most every 250 ms. The entry point probe is a 6 byte
+            // read and runs on every tick.
+            var s_Now = DateTime.UtcNow;
+
+            if ((s_Now - m_LastProcessProbe).TotalMilliseconds >= 250)
+            {
+                m_LastProcessProbe = s_Now;
+                ProbeProcessState();
+            }
+
+            // Primary signal: the Steam DRM stub replaces the entry point once it has
+            // decrypted the image, so this flips to "unpacked" the moment it is safe to
+            // inject. It does not depend on which DLLs the game happens to load when.
+            var s_EntryPointUnpacked = IsEntryPointUnpacked();
+
+            var s_Elapsed = (int) (s_Now - m_AttachStarted).TotalMilliseconds;
+
+            var s_ProcessAge = m_GameStartedAt == DateTime.MinValue
+                ? "unknown"
+                : $"{(int) (DateTime.Now - m_GameStartedAt).TotalMilliseconds} ms";
+
+            string s_Reason = null;
+
+            if (s_EntryPointUnpacked)
+                s_Reason = "entry point no longer looks like the DRM stub";
+            else if (m_HasD3D9)
+                s_Reason = "d3d9 loaded";
+            else if (m_HasBink)
+                s_Reason = "binkw32 loaded";
+            else if (m_HasWindow)
+                s_Reason = "game window created";
+            else if (s_Elapsed >= ReadyTimeoutMs)
+                s_Reason = $"readiness timeout reached after {ReadyTimeoutMs} ms, injecting anyway";
+
+            // Stable key (no elapsed timing) so callers only react to real state changes.
+            p_ReadinessKey = string.Format("ep={0};d3d9={1};bink32={2};window={3};error={4};state={5}",
+                s_EntryPointUnpacked, m_HasD3D9, m_HasBink, m_HasWindow, m_ModuleError ?? "none",
+                s_Reason == null ? "waiting" : "ready");
+
+            p_Readiness = string.Format(
+                "{0} ms after detection, process age {1}: entry-point={2}, d3d9={3}, binkw32={4}, window={5}{6}",
+                s_Elapsed,
+                s_ProcessAge,
+                m_EntryPointChecked
+                    ? (m_EntryPointLooksPacked ? "still the DRM stub" : "unpacked")
+                    : "unknown",
+                m_HasD3D9 ? "loaded" : "not loaded",
+                m_HasBink ? "loaded" : "not loaded",
+                m_HasWindow ? "created" : "not created",
+                m_ModuleError != null ? $", module enumeration failed ({m_ModuleError})" : string.Empty);
+
+            if (s_Reason == null)
+                return false;
+
+            p_Readiness += $" [{s_Reason}]";
+
+            return true;
+        }
+
+        /// <summary>
+        /// Refreshes the cached process snapshot used by the readiness gate.
+        /// The module list is recorded once on the first successful probe.
+        /// </summary>
+        private void ProbeProcessState()
+        {
+            var s_HasD3D9 = false;
+            var s_HasBink = false;
+            var s_HasWindow = false;
+            string s_ModuleError = null;
+            List<string> s_ModuleNames = null;
+
+            try
+            {
+                s_ModuleNames = new List<string>();
+
+                foreach (ProcessModule s_Module in m_GameProcess.Modules)
+                {
+                    var s_Name = s_Module.ModuleName ?? string.Empty;
+                    s_ModuleNames.Add(s_Name);
+
+                    if (s_Name.Equals("d3d9.dll", StringComparison.OrdinalIgnoreCase))
+                        s_HasD3D9 = true;
+                    else if (s_Name.Equals("binkw32.dll", StringComparison.OrdinalIgnoreCase))
+                        s_HasBink = true;
+                }
+
+                s_HasWindow = m_GameProcess.MainWindowHandle != IntPtr.Zero;
+            }
+            catch (Exception s_Exception)
+            {
+                s_ModuleError = s_Exception.GetType().Name;
+            }
+
+            if (s_ModuleError == null)
+            {
+                m_HasD3D9 = s_HasD3D9;
+                m_HasBink = s_HasBink;
+                m_HasWindow = s_HasWindow;
+            }
+
+            m_ModuleError = s_ModuleError;
+
+            if (m_ModuleListLogged)
+                return;
+
+            m_ModuleListLogged = true;
+
+            if (s_ModuleNames == null)
+            {
+                Log.Info($"Could not enumerate game modules: {m_ModuleError}");
+                return;
+            }
+
+            var s_List = s_ModuleNames.Count > 30
+                ? string.Join(", ", s_ModuleNames.GetRange(0, 30)) + ", ..."
+                : string.Join(", ", s_ModuleNames);
+
+            Log.Verbose($"Game modules at first readiness check ({s_ModuleNames.Count}): {s_List}");
+        }
+
+        private bool IsEntryPointUnpacked()
+        {
+            try
+            {
+                if (Reader == null)
+                    return false;
+
+                var s_EntryPoint = m_GameProcess.MainModule.EntryPointAddress;
+
+                if (s_EntryPoint == IntPtr.Zero)
+                    return false;
+
+                // The Steam DRM stub is 7 bytes: B8 <imm32> FF E0  (mov eax, imm32 ; jmp eax).
+                // The whole sequence must be read; the trailing FF E0 is what identifies the stub.
+                var s_Bytes = Reader.Read(s_EntryPoint, 7);
+
+                if (s_Bytes == null || s_Bytes.Length < 7)
+                    return false;
+
+                var s_LooksPacked = s_Bytes[0] == 0xB8 && s_Bytes[5] == 0xFF && s_Bytes[6] == 0xE0;
+
+                if (!m_EntryPointChecked || s_LooksPacked != m_EntryPointLooksPacked)
+                {
+                    m_EntryPointChecked = true;
+                    m_EntryPointLooksPacked = s_LooksPacked;
+
+                    Log.Info(string.Format("Game entry point 0x{0:X8} bytes: {1} ({2}).",
+                        s_EntryPoint.ToInt64(),
+                        BitConverter.ToString(s_Bytes).Replace("-", " "),
+                        s_LooksPacked
+                            ? "still looks like the Steam DRM stub, the game has not unpacked yet"
+                            : "unpacked"));
+                }
+
+                return !s_LooksPacked;
+            }
+            catch
+            {
+                // A failed probe must not prevent attaching.
+                return false;
+            }
+        }
+
+        private void Detach()
+        {
+            Active = false;
+            m_GameProcess = null;
+            m_LastReadinessLog = null;
+            m_EntryPointChecked = false;
+            m_EntryPointLooksPacked = false;
+            m_ModuleListLogged = false;
+            m_GameStartedAt = DateTime.MinValue;
+            m_LastProcessProbe = DateTime.MinValue;
+            m_HasD3D9 = false;
+            m_HasBink = false;
+            m_HasWindow = false;
+            m_ModuleError = null;
+
+            if (Reader != null)
+            {
+                Reader.CloseHandle();
+                Reader = null;
+            }
+
+            if (m_Injector != null)
+            {
+                m_Injector.Dispose();
+                m_Injector = null;
+            }
         }
 
         public void OnMessage(string p_Type, string p_Data)
@@ -428,6 +875,7 @@ namespace Statman.Engines
                     SendMessage("H2", Options.Get().HM3.Hitman2016Mode ? "true" : "false");
                     SendMessage("2D", Options.Get().HM3.Hitman2016DebugMode ? "true" : "false");
                     SendMessage("OV", Options.Get().HM3.Overlay ? "true" : "false");
+                    SendMessage("VL", Log.VerboseEnabled ? "true" : "false");
                     
                     break;
                 }
@@ -473,6 +921,12 @@ namespace Statman.Engines
                     {
                         StatTracker.DifficultyAddress = new IntPtr(difficultyAddr);
                     }
+                    break;
+                }
+
+                case "LW":
+                {
+                    SetLiveWeaponKills(p_Data);
                     break;
                 }
 

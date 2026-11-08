@@ -26,7 +26,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
+    <ApplicationVersion>1.6.0.0</ApplicationVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
   </PropertyGroup>
@@ -41,6 +41,11 @@
   </PropertyGroup>
   <PropertyGroup>
     <AssemblyName>Statman</AssemblyName>
+  </PropertyGroup>
+  <PropertyGroup>
+    <!-- Keep PDBs for referenced assemblies, but never copy their XML
+         documentation: those files are only used by an IDE. -->
+    <ReferenceRelatedFileExtensions>.pdb</ReferenceRelatedFileExtensions>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
     <DefineConstants>TRACE;DEBUG</DefineConstants>
@@ -99,6 +104,7 @@
   <ItemGroup>
     <Compile Include="Util\Log.cs" />
     <Compile Include="Util\Options.cs" />
+    <Compile Include="Util\Paths.cs" />
     <Compile Include="Windows\UpdateWindow.xaml.cs">
       <DependentUpon>UpdateWindow.xaml</DependentUpon>
     </Compile>
@@ -240,10 +246,20 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="HM3_locations.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <Link>config\HM3_locations.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- XML documentation files that NuGet packages copy next to their DLLs are
+       only used by an IDE. Deleting them here keeps the application folder
+       free of files that are never loaded at runtime. -->
+  <Target Name="RemoveReferenceDocumentation" AfterTargets="Build">
+    <ItemGroup>
+      <_ReferenceDocumentation Include="$(OutDir)*.xml" />
+    </ItemGroup>
+    <Delete Files="@(_ReferenceDocumentation)" Condition="'@(_ReferenceDocumentation)' != ''" />
+  </Target>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">
