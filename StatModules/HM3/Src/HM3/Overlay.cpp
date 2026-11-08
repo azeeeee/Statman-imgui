@@ -1010,13 +1010,17 @@ namespace
 		{
 			for (int i = 0; i < c_StatPanelCount; ++i)
 			{
+				// First-run defaults mirror the "Arrange detailed" preset: every
+				// detailed panel is visible and the minimal-only ones are hidden.
+				// Panel positions fall back to DetailedX/DetailedY because
+				// s_ArrangeMode starts as None, i.e. not Minimal.
 				ShowStat[i] = c_StatPanels[i].DefaultVisible;
 				StatFontStyle[i] = -1;
 			}
 		}
 
 		bool ShowRouletteHud = true;
-		bool RouletteOnlyInGame = true;
+		bool RouletteOnlyInGame = false;
 		int RouletteMission = 0;
 		int RouletteExtras = 0;
 
@@ -1044,7 +1048,7 @@ namespace
 		float LevelSizeOverride = 0.0f;
 		int LevelFontStyle = -1;
 
-		bool BoldLabels = true;
+		bool BoldLabels = false;
 		bool BoldValues = true;
 		bool BoldRating = true;
 
@@ -1122,26 +1126,19 @@ namespace
 		return GetConfigDirectory() / L"HM3Overlay.json";
 	}
 
-	// Older builds kept the overlay settings next to Statman.exe; the very
-	// first builds used %APPDATA%\Statman. Both are returned so an upgrade
-	// keeps its layout instead of starting from the defaults.
-	std::vector<std::filesystem::path> GetLegacySettingsPaths()
+	// Only builds that stored the overlay settings next to Statman.exe are
+	// migrated. The pre-1.5 %APPDATA%\Statman location is deliberately not
+	// imported: doing so made fresh installs inherit stale layouts instead of
+	// starting from the built-in defaults.
+	std::filesystem::path GetLegacySettingsPath()
 	{
-		std::vector<std::filesystem::path> s_Paths;
-
 		wchar_t s_ModulePath[MAX_PATH]{};
-		const DWORD s_ModuleLength = GetModuleFileNameW(g_ModuleHandle, s_ModulePath, MAX_PATH);
+		const DWORD s_Length = GetModuleFileNameW(g_ModuleHandle, s_ModulePath, MAX_PATH);
 
-		if (s_ModuleLength > 0 && s_ModuleLength < MAX_PATH)
-			s_Paths.push_back(std::filesystem::path(s_ModulePath).parent_path() / L"HM3Overlay.json");
+		if (s_Length > 0 && s_Length < MAX_PATH)
+			return std::filesystem::path(s_ModulePath).parent_path() / L"HM3Overlay.json";
 
-		wchar_t s_AppData[MAX_PATH]{};
-		const DWORD s_AppDataLength = GetEnvironmentVariableW(L"APPDATA", s_AppData, MAX_PATH);
-
-		if (s_AppDataLength > 0 && s_AppDataLength < MAX_PATH)
-			s_Paths.push_back(std::filesystem::path(s_AppData) / L"Statman" / L"HM3Overlay.json");
-
-		return s_Paths;
+		return {};
 	}
 
 	nlohmann::json ColorToJson(const ImVec4& p_Color)
@@ -1201,8 +1198,7 @@ namespace
 	}
 
 	// Moves HM3Overlay.json out of the application folder the first time this
-	// build runs. The %APPDATA% copy is intentionally left in place; it is only
-	// a read-only fallback for installations older than the config folder.
+	// build runs so an upgrade keeps its layout.
 	void MigrateLegacySettings()
 	{
 		std::error_code s_Error;
@@ -1211,21 +1207,16 @@ namespace
 		if (std::filesystem::exists(s_Target, s_Error))
 			return;
 
-		const auto s_LegacyPaths = GetLegacySettingsPaths();
+		const auto s_LegacyPath = GetLegacySettingsPath();
 
-		if (s_LegacyPaths.empty())
-			return;
-
-		const auto& s_RootPath = s_LegacyPaths.front();
-
-		if (!std::filesystem::exists(s_RootPath, s_Error))
+		if (s_LegacyPath.empty() || !std::filesystem::exists(s_LegacyPath, s_Error))
 			return;
 
 		std::filesystem::create_directories(s_Target.parent_path(), s_Error);
-		std::filesystem::rename(s_RootPath, s_Target, s_Error);
+		std::filesystem::rename(s_LegacyPath, s_Target, s_Error);
 
 		if (s_Error)
-			std::filesystem::copy_file(s_RootPath, s_Target, std::filesystem::copy_options::overwrite_existing, s_Error);
+			std::filesystem::copy_file(s_LegacyPath, s_Target, std::filesystem::copy_options::overwrite_existing, s_Error);
 	}
 
 	void LoadSettings()
@@ -1239,15 +1230,12 @@ namespace
 
 			if (!std::filesystem::exists(s_SettingsPath, s_ExistsError))
 			{
-				for (const auto& s_LegacyPath : GetLegacySettingsPaths())
-				{
-					std::error_code s_LegacyError;
+				const auto s_LegacyPath = GetLegacySettingsPath();
+				std::error_code s_LegacyError;
 
-					if (std::filesystem::exists(s_LegacyPath, s_LegacyError))
-					{
-						s_SettingsPath = s_LegacyPath;
-						break;
-					}
+				if (!s_LegacyPath.empty() && std::filesystem::exists(s_LegacyPath, s_LegacyError))
+				{
+					s_SettingsPath = s_LegacyPath;
 				}
 			}
 
@@ -3636,6 +3624,20 @@ namespace
 				s_CheatState.EnableCheats = s_Cheats;
 				g_Module->SetCheatState(s_CheatState);
 			}
+
+			// The OSD toggle lives with the cheat options because hiding the
+			// game's HUD is treated as a cheat by the detection logic.
+			CheatState s_HudState = g_Module->GetCheatState();
+			bool s_ShowOSD = s_HudState.ShowOSD;
+
+			if (ImGui::Checkbox("Show OSD", &s_ShowOSD))
+			{
+				s_HudState.ShowOSD = s_ShowOSD;
+				g_Module->SetCheatState(s_HudState);
+			}
+
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("Show the game's on-screen HUD. Enabled by default; disabling it is treated as a cheat.");
 		}
 
 		bool s_UnlimitedSaves = g_Module->UnlimitedSaves();
@@ -3646,17 +3648,10 @@ namespace
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("Toggle unlimited saves. You will be able to save the game even on Pro difficulty.");
 
-		CheatState s_HudState = g_Module->GetCheatState();
-		bool s_ShowOSD = s_HudState.ShowOSD;
-
-		if (ImGui::Checkbox("Show OSD", &s_ShowOSD))
-		{
-			s_HudState.ShowOSD = s_ShowOSD;
-			g_Module->SetCheatState(s_HudState);
-		}
+		ImGui::Checkbox("Predict Special Ratings [Experimental]", &s_Settings.PredictSpecialRatings);
 
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Show the game's on-screen HUD. Enabled by default; disabling it is treated as a cheat.");
+			ImGui::SetTooltip("Estimates the final special rating from the live statistics and the level's NPC count. The real game rating replaces it when the mission ends.");
 
 		if (s_Cheats || s_UnlimitedSaves)
 			ImGui::TextColored(s_Settings.HighlightColor, "Active cheats are marked on the HUD.");
@@ -3820,15 +3815,6 @@ namespace
 				ImGui::TextDisabled("H/HH = hours, M/MM = minutes, S/SS = seconds, 0/00/000 = fraction.");
 				ImGui::TextDisabled("Preview: %s", FormatTimer(3723.456, s_Settings.TimerFormat).c_str());
 				ImGui::TextDisabled("Ctrl+Click the Timer panel in the overlay to override its size/font style.");
-
-				ImGui::EndTabItem();
-			}
-
-			if (ImGui::BeginTabItem("Experimental"))
-			{
-				ImGui::Checkbox("Predict Special Ratings [Experimental]", &s_Settings.PredictSpecialRatings);
-				ImGui::TextDisabled("Estimates the final special rating from live stats and the level's NPC count.");
-				ImGui::TextDisabled("The real game rating replaces it when the mission ends.");
 
 				ImGui::EndTabItem();
 			}
@@ -4315,7 +4301,10 @@ namespace
 			}
 		}
 
+		// Wrap instead of clipping: the window can be narrower than this line.
+		ImGui::PushTextWrapPos(0.0f);
 		ImGui::TextDisabled("Outfit names come from the game's base geometry and may simply be 'Ground'. Use distance and the actor visuals to identify them.");
+		ImGui::PopTextWrapPos();
 	}
 
 	void DrawHitman2016DebugTab()
