@@ -84,6 +84,7 @@ External edits to `HM3Overlay.json` are read when the overlay initializes. Resta
 - The inherited Hitman 2016 mode remains experimental.
 - A higher resolution (16:9, 1600x900 preferred) may be needed to see all overlay options.
 - Other mods or overlays may conflict with injection or rendering.
+- The slow-motion whenever 47 is dying might trigger the "Cheats Enabled" flag - it is caused by the time multiplier which changes to 0.20. 
 - This is an unofficial fork. Please do not report fork-specific issues to the original Statman project.
 
 ## Requirements
