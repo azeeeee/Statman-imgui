@@ -32,12 +32,6 @@ This fork keeps Statman's original HM3 stat tracking and rating logic, but repla
 - Statman can be started before or after Hitman: Blood Money; injection waits until the game is ready.
 - Diagnostic logs are written next to `Statman.exe`; verbose logging and the log folder are available from the right-click menu.
 
-## Showcase
-
-[Click here to watch a video](https://www.youtube.com/watch?v=pQZxbgIwI5A)
-
-![Overlay Menu](https://i.imgur.com/cHSAuXc.jpeg)
-
 ## Usage
 
 Statman can be started before or after the game; injection waits for Hitman: Blood Money to finish initializing.
