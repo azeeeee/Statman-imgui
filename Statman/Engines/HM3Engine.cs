@@ -148,87 +148,18 @@ namespace Statman.Engines
         // while individual cheats are still enabled.
         public bool CheatsActive()
         {
-            try
-            {
-                if (Reader == null)
-                    return false;
+            // The injected module resolves all cheat flags by pattern scanning,
+            // so it is the only reliable source across game builds. Before the
+            // module reports, assume no cheats.
+            return m_HasCheatsActiveFromModule && m_CheatsActiveFromModule;
+        }
 
-                // The injected module also knows whether a non-normal time
-                // multiplier was produced by the game itself (the dying slow
-                // motion), so prefer its verdict when it is available.
-                if (m_HasCheatsActiveFromModule)
-                    return m_CheatsActiveFromModule;
-
-                var s_Base = GameModuleBase != IntPtr.Zero ? GameModuleBase.ToInt32() : 0x00400000;
-
-                byte[] ReadRva(int p_Rva, int p_Count)
-                {
-                    return Reader.Read(new IntPtr(s_Base + (p_Rva - 0x00400000)), p_Count);
-                }
-
-                int ReadRvaInt(int p_Rva)
-                {
-                    var s_Data = ReadRva(p_Rva, 4);
-                    return s_Data == null ? 0 : BitConverter.ToInt32(s_Data, 0);
-                }
-
-                var s_CheatsEnabled = ReadRva(0x008ABA89, 1);
-
-                if (s_CheatsEnabled != null && s_CheatsEnabled[0] != 0)
-                    return true;
-
-                if (ReadRvaInt(0x0099B344) != 0) return true; // God mode
-                if (ReadRvaInt(0x0099B840) != 0) return true; // Invisible mode
-                if (ReadRvaInt(0x0099B848) != 0) return true; // Show enemy vision
-                if (ReadRvaInt(0x0099A928) != 0) return true; // Infinite clip
-
-                // The OSD is expected to be on. Disabling the game's HUD is
-                // treated as a cheat; only flag it when the read succeeds.
-                var s_OsdData = ReadRva(0x008031D0, 4);
-
-                if (s_OsdData != null && BitConverter.ToInt32(s_OsdData, 0) == 0)
-                    return true;
-
-                var s_SysData = ReadRva(0x0081F820, 4);
-
-                if (s_SysData == null)
-                    return false;
-
-                var s_Sys = BitConverter.ToUInt32(s_SysData, 0);
-
-                if (s_Sys == 0)
-                    return false;
-
-                var s_DbData = Reader.Read(new IntPtr((int)(s_Sys + 0xB8)), 4);
-
-                if (s_DbData != null)
-                {
-                    var s_Db = BitConverter.ToUInt32(s_DbData, 0);
-
-                    if (s_Db != 0)
-                    {
-                        var s_InfAmmo = Reader.Read(new IntPtr((int)(s_Db + 0xB4)), 4);
-
-                        if (s_InfAmmo != null && BitConverter.ToInt32(s_InfAmmo, 0) != 0)
-                            return true;
-                    }
-                }
-
-                var s_TimeData = Reader.Read(new IntPtr((int)(s_Sys + 0xB28)), 4);
-
-                if (s_TimeData != null)
-                {
-                    var s_Multiplier = BitConverter.ToSingle(s_TimeData, 0);
-
-                    if (s_Multiplier < 0.999f || s_Multiplier > 1.001f)
-                        return true;
-                }
-            }
-            catch
-            {
-            }
-
-            return false;
+        /// <summary>
+        /// Total NPC count of the current level, reported by the injected module.
+        /// </summary>
+        public int TotalLevelNpcs
+        {
+            get { return m_TotalLevelNpcs; }
         }
 
         public ProcessMemoryReader Reader { get; private set; }
@@ -253,6 +184,10 @@ namespace Statman.Engines
         // slow motion), which this side cannot detect on its own.
         private volatile bool m_CheatsActiveFromModule;
         private volatile bool m_HasCheatsActiveFromModule;
+
+        // Total NPC count of the current level, reported by the injected module
+        // so this side never has to read build-specific addresses.
+        private volatile int m_TotalLevelNpcs;
 
         // The game is a Steam DRM packed executable that decrypts itself on startup.
         // Injecting before that finishes can corrupt the process, so wait until the
@@ -880,6 +815,7 @@ namespace Statman.Engines
 
                     // A new injection means the previous module state is gone.
                     m_HasCheatsActiveFromModule = false;
+                    m_TotalLevelNpcs = 0;
 
                     // Send Hitman 2016 data.
                     ReloadHitman2016Data();
@@ -997,6 +933,14 @@ namespace Statman.Engines
                 {
                     m_CheatsActiveFromModule = p_Data == "true";
                     m_HasCheatsActiveFromModule = true;
+                    break;
+                }
+
+                case "NP":
+                {
+                    int s_Count;
+                    if (int.TryParse(p_Data, out s_Count))
+                        m_TotalLevelNpcs = s_Count;
                     break;
                 }
             }

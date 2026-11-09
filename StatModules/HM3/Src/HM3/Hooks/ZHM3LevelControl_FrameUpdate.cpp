@@ -62,6 +62,35 @@ namespace
 			g_Module->Pipe()->SendPipeMessage("CA", s_Active ? "true" : "false");
 	}
 
+	// The C# UI needs the level's total NPC count for its special-rating
+	// prediction. Send it from here so the C# side does not have to walk
+	// hardcoded addresses that only match one game build.
+	void UpdateLevelNpcNotification()
+	{
+		static int s_Last = -1;
+		static DWORD s_LastTick = 0;
+
+		const DWORD s_Now = GetTickCount();
+
+		if (s_LastTick != 0 && s_Now - s_LastTick < 1000)
+			return;
+
+		s_LastTick = s_Now;
+
+		const int s_Count = g_Module->GetTotalLevelNpcs();
+
+		if (s_Count == s_Last)
+			return;
+
+		s_Last = s_Count;
+
+		LogVerbose("Level NPCs: %d alive / %d total.\n",
+			g_Module->GetCachedAliveLevelNpcs(), s_Count);
+
+		if (g_Module->Pipe())
+			g_Module->Pipe()->SendPipeMessage("NP", std::to_string(s_Count));
+	}
+
 	void UpdateLiveWeaponKills(ZHM3LevelControl* th)
 	{
 		// The container does not change every frame; reading it a few times per
@@ -273,5 +302,6 @@ DECLARE_THISCALL_DETOUR(HM3Hooks, void, ZHM3LevelControl_FrameUpdate, ZHM3LevelC
 	o_ZHM3LevelControl_FrameUpdate(th);
 
 	UpdateCheatNotification();
+	UpdateLevelNpcNotification();
 	UpdateLiveWeaponKills(th);
 }

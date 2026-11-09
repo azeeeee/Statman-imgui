@@ -137,7 +137,22 @@ bool HM3Module::Init()
 	Log("Installing D3D9 hooks (scene loaded=%s, waited %lu ms).\n",
 		m_FirstSceneLoaded ? "yes" : "no (timeout)", GetTickCount() - s_D3D9WaitStart);
 
-	m_Hooks->InstallD3D9Hooks();
+	// Start-up can still be inside the game's own device creation or a
+	// fullscreen transition, in which case the dummy device fails with
+	// D3DERR_DEVICELOST. Retry briefly; the first scene usually finishes
+	// within a second of the timeout above.
+	const DWORD s_D3D9InstallStart = GetTickCount();
+
+	while (!m_Hooks->InstallD3D9Hooks())
+	{
+		if (GetTickCount() - s_D3D9InstallStart > 5000)
+		{
+			Log("Could not install the D3D9 hooks; the in-game overlay stays disabled.\n");
+			break;
+		}
+
+		Sleep(500);
+	}
 
 	Log("Stat module initialization finished.\n");
 
@@ -291,6 +306,88 @@ bool HM3Module::CheatsActive() const
 void HM3Module::SetGameTimeMultiplier(float p_Value)
 {
 	m_GameTimeMultiplier.store(p_Value, std::memory_order_relaxed);
+}
+
+int HM3Module::GetTotalLevelNpcs() const
+{
+	int s_Total = 0;
+	int s_Alive = 0;
+
+	do
+	{
+		if (!m_Pointers || !m_Functions)
+			break;
+
+		// Count every actor in the level except the player. The earlier version
+		// only counted "dressable" actors (those with a resolvable outfit
+		// object), which silently skipped NPCs that do not expose one and made
+		// a healthy level read as e.g. 40 alive instead of 70.
+		int s_ActorNpcs = 0;
+
+		if (m_Pointers->g_pGameData && *m_Pointers->g_pGameData)
+		{
+			auto* s_GameData = *m_Pointers->g_pGameData;
+
+			if (s_GameData)
+			{
+				// ZHitman3 and ZHM3Actor are sibling classes, so compare
+				// addresses rather than pointers.
+				const auto s_PlayerAddress = reinterpret_cast<uintptr_t>(s_GameData->m_pHitman);
+
+				for (uint32_t i = 0; i < s_GameData->m_nActorCount && i < 512; ++i)
+				{
+					auto* s_Actor = s_GameData->m_aActors[i];
+
+					if (!s_Actor || reinterpret_cast<uintptr_t>(s_Actor) == s_PlayerAddress)
+						continue;
+
+					++s_ActorNpcs;
+
+					if (!s_Actor->IsDead())
+						++s_Alive;
+				}
+			}
+		}
+
+		const auto s_ImageBase = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+
+		if (s_ImageBase)
+		{
+			// The game's special-rating code reads the level object from
+			// [0x0081F83C] + 0xA48 and the total NPC count from +0x1B8. The
+			// address is image-base relative, so a relocated executable still
+			// resolves.
+			constexpr uintptr_t c_GameGlobalRva = 0x0081F83C - 0x00400000;
+			const uintptr_t s_GlobalAddress = s_ImageBase + c_GameGlobalRva;
+
+			uintptr_t s_Game = 0;
+			uintptr_t s_LevelControl = 0;
+			int s_TotalNpcs = 0;
+
+			if (ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(s_GlobalAddress), &s_Game, sizeof(s_Game), nullptr)
+				&& s_Game
+				&& ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(s_Game + 0xA48), &s_LevelControl, sizeof(s_LevelControl), nullptr)
+				&& s_LevelControl
+				&& ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(s_LevelControl + 0x1B8), &s_TotalNpcs, sizeof(s_TotalNpcs), nullptr)
+				&& s_TotalNpcs > 0)
+			{
+				s_Total = s_TotalNpcs;
+			}
+		}
+
+		if (s_Total <= 0)
+			s_Total = s_ActorNpcs;
+
+		// The two counts come from different places; never show more alive than
+		// the total.
+		if (s_Alive > s_Total)
+			s_Total = s_Alive;
+	} while (false);
+
+	m_CachedTotalLevelNpcs.store(s_Total, std::memory_order_relaxed);
+	m_CachedAliveLevelNpcs.store(s_Alive, std::memory_order_relaxed);
+
+	return s_Total;
 }
 
 bool HM3Module::ApplyStartingLocation(const LevelStartingLocation& p_Location)

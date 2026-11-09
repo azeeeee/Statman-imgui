@@ -102,44 +102,9 @@ namespace Statman.Engines.HM3
 
         private int GetTotalLevelNpcs()
         {
-            try
-            {
-                var s_Base = m_Engine.GameModuleBase != IntPtr.Zero
-                    ? m_Engine.GameModuleBase.ToInt32()
-                    : 0x00400000;
-
-                var s_GlobalAddress = s_Base + (0x0081F83C - 0x00400000);
-                var s_GamePtrData = m_Engine.Reader.Read(new IntPtr(s_GlobalAddress), 4);
-
-                if (s_GamePtrData == null)
-                    return 0;
-
-                var s_Game = BitConverter.ToUInt32(s_GamePtrData, 0);
-
-                if (s_Game == 0)
-                    return 0;
-
-                var s_LevelPtrData = m_Engine.Reader.Read(new IntPtr((int)(s_Game + 0xA48)), 4);
-
-                if (s_LevelPtrData == null)
-                    return 0;
-
-                var s_Level = BitConverter.ToUInt32(s_LevelPtrData, 0);
-
-                if (s_Level == 0)
-                    return 0;
-
-                var s_TotalData = m_Engine.Reader.Read(new IntPtr((int)(s_Level + 0x1B8)), 4);
-
-                if (s_TotalData == null)
-                    return 0;
-
-                return BitConverter.ToInt32(s_TotalData, 0);
-            }
-            catch
-            {
-                return 0;
-            }
+            // Reported by the injected module, which resolves it with pattern
+            // scanning instead of build-specific addresses.
+            return m_Engine.TotalLevelNpcs;
         }
 
         private string PredictSpecialRating(Stats p_Stats)

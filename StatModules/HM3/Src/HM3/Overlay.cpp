@@ -660,50 +660,9 @@ namespace
 
 	int GetTotalLevelNpcs()
 	{
-		const uintptr_t s_GameBase = GetImageBase();
-
-		if (!s_GameBase)
-			return 0;
-
-		// The game's special-rating code reads the level object from [0x0081F83C] + 0xA48,
-		// then the total NPC count from +0x1B8. Make the address image-base relative.
-		const uintptr_t s_GlobalAddress = s_GameBase + (0x0081F83C - 0x00400000);
-
-		uintptr_t s_Game = 0;
-		if (!ReadGameMemory(s_GlobalAddress, s_Game) || !s_Game)
-			return 0;
-
-		uintptr_t s_LevelControl = 0;
-		if (!ReadGameMemory(s_Game + 0xA48, s_LevelControl) || !s_LevelControl)
-			return 0;
-
-		int s_TotalNpcs = 0;
-		if (!ReadGameMemory(s_LevelControl + 0x1B8, s_TotalNpcs))
-			return 0;
-
-		if (s_TotalNpcs > 0)
-			return s_TotalNpcs;
-
-		// Fallback: count dressable NPC actors if the level object did not expose a count.
-		auto* s_GameData = (g_Module->Pointers()->g_pGameData && *g_Module->Pointers()->g_pGameData)
-			? *g_Module->Pointers()->g_pGameData
-			: nullptr;
-
-		if (s_GameData)
-		{
-			for (uint32_t i = 0; i < s_GameData->m_nActorCount && i < 512; ++i)
-			{
-				auto* s_Actor = s_GameData->m_aActors[i];
-
-				if (!s_Actor || !s_Actor->GetHitmanAs())
-					continue;
-
-				if (g_Module->Functions()->ZGEOM_RefToPtr(s_Actor->GetHitmanAs()))
-					++s_TotalNpcs;
-			}
-		}
-
-		return s_TotalNpcs;
+		// Cached by the game thread once per second, so this is free to call
+		// from the render thread.
+		return g_Module ? g_Module->GetCachedTotalLevelNpcs() : 0;
 	}
 
 	void UpdateGameCursor(bool p_Freeze)
@@ -965,7 +924,10 @@ namespace
 		{ "innocentsWounded", "Innocents Wounded", "##hud_stat_innocents_wounded", StatGroup::Detailed, true, false, 1127.0f, 489.0f, 1127.0f, 489.0f },
 		{ "shotsHit", "Shots Hit", "##hud_stat_shots_hit", StatGroup::Detailed, true, true, 1154.0f, 527.0f, 257.0f, 331.0f },
 		{ "nonTargetsKilled", "Non-Targets Killed", "##hud_stat_non_targets_killed", StatGroup::Minimal, false, true, 117.0f, 299.0f, 117.0f, 299.0f },
-		{ "nonTargetsHarmed", "Non-Targets Harmed", "##hud_stat_non_targets_harmed", StatGroup::Minimal, false, true, 110.0f, 331.0f, 110.0f, 331.0f }
+		{ "nonTargetsHarmed", "Non-Targets Harmed", "##hud_stat_non_targets_harmed", StatGroup::Minimal, false, true, 110.0f, 331.0f, 110.0f, 331.0f },
+		// Optional panel: the level's total NPC count. Appended last so the
+		// index-based value switch above keeps its existing numbering.
+		{ "totalNpcs", "NPCs", "##hud_stat_total_npcs", StatGroup::Detailed, false, false, 1146.0f, 565.0f, 1146.0f, 565.0f }
 	};
 
 	constexpr int c_StatPanelCount = static_cast<int>(sizeof(c_StatPanels) / sizeof(c_StatPanels[0]));
@@ -2367,6 +2329,8 @@ namespace
 		int PreferredWeapon = 0;
 		int PreferredWeaponKills = 0;
 		int Rating1Total = 0;
+		int TotalNpcs = 0;
+		int AliveNpcs = 0;
 	};
 
 	const char* GetItemsLeftText(ItemState p_State)
@@ -2380,9 +2344,17 @@ namespace
 		}
 	}
 
-	HudStats GetHudStats(const HM3Stats* p_Stats, const ZHM3GameData* p_GameData)
+	HudStats GetHudStats(const HM3Stats* p_Stats, const ZHM3GameData* p_GameData, bool p_InGame)
 	{
 		HudStats s_Stats;
+
+		// Only report the NPC count while a level is actually running. The
+		// cached value would otherwise linger on the mission summary screen.
+		if (p_InGame)
+		{
+			s_Stats.TotalNpcs = g_Module ? g_Module->GetCachedTotalLevelNpcs() : 0;
+			s_Stats.AliveNpcs = g_Module ? g_Module->GetCachedAliveLevelNpcs() : 0;
+		}
 
 		if (!p_Stats)
 			return s_Stats;
@@ -2458,6 +2430,13 @@ namespace
 		{
 			const int s_Harmed = p_Stats.EnemiesWounded + p_Stats.PolicemenWounded + p_Stats.InnocentsWounded;
 			return { std::to_string(s_Harmed), s_Harmed > 0 };
+		}
+		case 16:
+		{
+			if (p_Stats.TotalNpcs <= 0)
+				return { "-", false };
+
+			return { std::format("{}/{}", p_Stats.AliveNpcs, p_Stats.TotalNpcs), false };
 		}
 		default: return { "-", false };
 		}
@@ -3347,6 +3326,9 @@ namespace
 
 				ImGui::TableNextColumn();
 				ImGui::Checkbox(c_StatPanels[i].Label, &s_Settings.ShowStat[i]);
+
+				if (std::strcmp(c_StatPanels[i].Key, "totalNpcs") == 0 && ImGui::IsItemHovered())
+					ImGui::SetTooltip("Experimental: counts every NPC actor in the level and how many are still alive.");
 			}
 
 			ImGui::EndTable();
@@ -4499,7 +4481,7 @@ namespace
 
 		const std::string s_TimeText = FormatTimer(s_CurrentTimeSeconds, s_Settings.TimerFormat);
 
-		const HudStats s_HudStats = GetHudStats(s_Stats, s_GameData);
+		const HudStats s_HudStats = GetHudStats(s_Stats, s_GameData, s_InGame);
 
 		ImGuiViewport* s_Viewport = ImGui::GetMainViewport();
 		const ImVec2 s_Center = s_Viewport->GetCenter();
@@ -4528,6 +4510,15 @@ namespace
 					i);
 
 				DrawStatPanel(i, s_HudStats);
+
+				// The NPC counter is experimental; mark it on hover instead of in
+				// the label so the HUD stays clean.
+				if (s_Capture
+					&& std::strcmp(c_StatPanels[i].Key, "totalNpcs") == 0
+					&& ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
+				{
+					ImGui::SetTooltip("NPCs [Experimental]\nCounts every NPC actor in the level and how many are still alive.");
+				}
 
 				EndHudWindow();
 			}

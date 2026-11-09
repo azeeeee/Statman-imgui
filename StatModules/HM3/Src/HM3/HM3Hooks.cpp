@@ -115,14 +115,12 @@ bool HM3Hooks::InstallD3D9Hooks()
 	if (m_D3D9HooksInstalled)
 		return true;
 
-	m_D3D9HooksInstalled = true;
-
+	// Only latch on success: the game's renderer may still be initialising and
+	// creating the dummy device can fail until it settles.
 	if (!HookD3D9())
-	{
-		Log("D3D9 hooks were not installed; the in-game overlay will be disabled.\n");
 		return false;
-	}
 
+	m_D3D9HooksInstalled = true;
 	Log("D3D9 hooks installed successfully.\n");
 	return true;
 }
@@ -181,10 +179,41 @@ bool HM3Hooks::HookD3D9()
 	s_Params.Windowed = true;
 
 	IDirect3DDevice9* s_Device = nullptr;
-	const auto s_Result = s_D3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, s_Window, D3DCREATE_SOFTWARE_VERTEXPROCESSING, &s_Params, &s_Device);
+	HRESULT s_Result = E_FAIL;
+
+	// Some drivers and D3D9 wrappers (dgVoodoo2, DXVK) reject specific vertex
+	// processing modes, so try the common combinations before giving up.
+	// D3DCREATE_FPU_PRESERVE keeps Direct3D from changing the x87 state the
+	// game relies on.
+	const DWORD s_VertexProcessingModes[] = {
+		D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+		D3DCREATE_HARDWARE_VERTEXPROCESSING,
+		D3DCREATE_MIXED_VERTEXPROCESSING
+	};
+
+	for (const DWORD s_Mode : s_VertexProcessingModes)
+	{
+		s_Result = s_D3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, s_Window,
+			s_Mode | D3DCREATE_FPU_PRESERVE, &s_Params, &s_Device);
+
+		if (SUCCEEDED(s_Result))
+			break;
+	}
 
 	if (!SUCCEEDED(s_Result)) {
-		Log("Could not create D3D device with error %x. Stats overlay won't work.\n", s_Result);
+		// Log the first failure at normal level; retries only in verbose mode so
+		// a permanently unsupported setup does not flood the log.
+		static bool s_FailureLogged = false;
+
+		if (!s_FailureLogged)
+		{
+			s_FailureLogged = true;
+			Log("Could not create D3D device with error %x; retrying. Stats overlay won't work until it succeeds.\n", s_Result);
+		}
+		else
+		{
+			LogVerbose("Could not create D3D device with error %x.\n", s_Result);
+		}
 		DestroyWindow(s_Window);
 		s_D3D->Release();
 		return false;

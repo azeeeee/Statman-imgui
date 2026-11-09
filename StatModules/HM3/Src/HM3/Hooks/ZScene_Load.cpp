@@ -30,6 +30,10 @@ DECLARE_THISCALL_DETOUR(HM3Hooks, void, ZScene_Load, ZScene* th, const char* sce
 	g_Module->m_SceneLoaded = true;
 	g_Module->m_FirstSceneLoaded = true;
 
+	// Drop the previous level's NPC counts so the HUD does not show stale
+	// numbers until the first update of the new scene.
+	g_Module->ResetLevelNpcCache();
+
 	o_ZScene_Load(th, scene);
 
 	// Cheats

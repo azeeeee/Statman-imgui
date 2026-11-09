@@ -77,6 +77,21 @@ public:
 	bool ApplyOutfit(int p_ActorIndex);
 	bool GetPlayerTransform(SMatrix33& p_Rotation, SVector3& p_Position) const;
 	int GetCurrentOutfitIndex() const;
+	int GetTotalLevelNpcs() const;
+
+	/// Last value computed by GetTotalLevelNpcs(). Updated once per second from
+	/// the game thread so the render thread can read it for free.
+	int GetCachedTotalLevelNpcs() const { return m_CachedTotalLevelNpcs.load(std::memory_order_relaxed); }
+
+	/// Number of those NPCs that are still alive. Same refresh cadence.
+	int GetCachedAliveLevelNpcs() const { return m_CachedAliveLevelNpcs.load(std::memory_order_relaxed); }
+
+	/// Clears the cached NPC counts (called on scene load).
+	void ResetLevelNpcCache()
+	{
+		m_CachedTotalLevelNpcs.store(0, std::memory_order_relaxed);
+		m_CachedAliveLevelNpcs.store(0, std::memory_order_relaxed);
+	}
 	std::string GetCurrentLevelKey() const;
 	bool AddOrUpdateLocation(const std::string& p_Level, const LevelStartingLocation& p_Location);
 	bool DeleteLocation(const std::string& p_Level, const std::string& p_Name);
@@ -115,6 +130,10 @@ protected:
 	// Starts at 1.0 so an external trainer that changes the multiplier before
 	// the game ever touches it is still detected.
 	std::atomic<float> m_GameTimeMultiplier{ 1.0f };
+
+	// Cached total NPC count for the current level, refreshed once per second.
+	mutable std::atomic<int> m_CachedTotalLevelNpcs{ 0 };
+	mutable std::atomic<int> m_CachedAliveLevelNpcs{ 0 };
 
 	std::unordered_map<std::string, std::vector<LevelStartingLocation>> m_LevelStartingLocations;
 	std::unordered_map<std::string, std::string> m_LevelLastLocations;
