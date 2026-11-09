@@ -62,6 +62,15 @@ bool HM3Hooks::Install()
 		"xxxxxxxxxxx"
 	)
 
+	// ZSysInterface::SetTimeMultiplier(float). Every game-driven change of the
+	// time scale goes through this function, including the dying slow motion
+	// that animates the multiplier down and back up.
+	DECLARE_PATTERN_HOOK(
+		ZSysInterface_SetTimeMultiplier,
+		"\x8A\x81\x2C\x0B\x00\x00\xD9\x81\x28\x0B\x00\x00\x84\xC0\x75\x0A\x8B\x44\x24\x04\x89\x81\x28\x0B\x00\x00",
+		"xxxxxxxxxxxxxxxxxxxxxxxxxx"
+	)
+
 	{
 		uint8_t s_Pattern[] = "\x83\xEC\x08\x53\x55\x56\x8B\xF1\x8B\x06\x57\xFF\x90\x7C\x02\x00\x00";
 		m_ZWINDOWS_Update = reinterpret_cast<void*>(Utils::SearchPattern(g_Module->GetModuleBase(), g_Module->GetSizeOfCode(), s_Pattern, "xxxxxxxxxxxxxxxxx"));
@@ -213,6 +222,7 @@ void HM3Hooks::Uninstall()
 	REMOVE_HOOK(ZHM3LevelControl_FrameUpdate)
 	REMOVE_HOOK(ZHM3LevelControl_MissionCompleted2)
 	REMOVE_HOOK(ZLimitSaves_Click)
+	REMOVE_HOOK(ZSysInterface_SetTimeMultiplier)
 	if (m_ZWINDOWS_Update)
 	{
 		REMOVE_HOOK(ZWINDOWS_Update)

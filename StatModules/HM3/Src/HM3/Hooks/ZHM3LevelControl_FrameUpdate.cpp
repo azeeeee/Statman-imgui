@@ -41,6 +41,27 @@ namespace
 		int32_t m_Count;              // 0x0004 - kills made with this weapon
 	};
 
+	// The native CheatsActive() also knows which time-scale changes came from
+	// the game itself (the dying slow motion animates the multiplier down to
+	// 0.2). The C# UI reads the cheat flags on its own, so mirror the
+	// authoritative value and let it override the rating warning.
+	void UpdateCheatNotification()
+	{
+		static bool s_Last = false;
+		static bool s_Sent = false;
+
+		const bool s_Active = g_Module->CheatsActive();
+
+		if (s_Sent && s_Active == s_Last)
+			return;
+
+		s_Sent = true;
+		s_Last = s_Active;
+
+		if (g_Module->Pipe())
+			g_Module->Pipe()->SendPipeMessage("CA", s_Active ? "true" : "false");
+	}
+
 	void UpdateLiveWeaponKills(ZHM3LevelControl* th)
 	{
 		// The container does not change every frame; reading it a few times per
@@ -250,5 +271,7 @@ DECLARE_THISCALL_DETOUR(HM3Hooks, void, ZHM3LevelControl_FrameUpdate, ZHM3LevelC
 	}
 
 	o_ZHM3LevelControl_FrameUpdate(th);
+
+	UpdateCheatNotification();
 	UpdateLiveWeaponKills(th);
 }

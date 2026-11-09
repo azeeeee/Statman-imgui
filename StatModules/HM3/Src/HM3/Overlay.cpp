@@ -3614,8 +3614,18 @@ namespace
 			if (ImGui::SliderFloat("Time multiplier", &s_CheatState.TimeMultiplier, 0.0f, 10.0f, "%.2f"))
 				s_CheatChanged = true;
 
+			// Dragging can settle on 0.99 or 1.01. A double click (either
+			// button) snaps back to the default speed so 1.00 can be restored
+			// exactly.
+			if (ImGui::IsItemHovered()
+				&& (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Right)))
+			{
+				s_CheatState.TimeMultiplier = 1.0f;
+				s_CheatChanged = true;
+			}
+
 			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("Game speed. 1.00 is normal speed. Ctrl+left-click the slider to enter a custom value.");
+				ImGui::SetTooltip("Game speed. 1.00 is normal speed. Double-click to reset to 1.00. Ctrl+left-click the slider to enter a custom value.");
 
 			if (s_CheatChanged)
 			{

@@ -63,6 +63,12 @@ public:
 	bool CheatsActive() const;
 	CheatState GetCheatState() const;
 	void SetCheatState(const CheatState& p_State);
+
+	/// Called from the game's own time-scale setter (ZSysInterface). The dying
+	/// slow motion animates the same field Statman exposes as the time
+	/// multiplier, so the last game-written value is remembered to keep that
+	/// animation from being reported as a cheat.
+	void SetGameTimeMultiplier(float p_Value);
 	bool Hitman2016Mode() const { return m_Hitman2016Mode; }
 	bool OverlayEnabled() const { return m_OverlayEnabled; }
 	bool Debug2016() const { return m_Debug2016; }
@@ -104,6 +110,11 @@ protected:
 	bool m_Hitman2016Mode = false;
 	bool m_OverlayEnabled = false;
 	bool m_Debug2016 = false;
+
+	// Last value the game itself wrote through ZSysInterface::SetTimeMultiplier.
+	// Starts at 1.0 so an external trainer that changes the multiplier before
+	// the game ever touches it is still detected.
+	std::atomic<float> m_GameTimeMultiplier{ 1.0f };
 
 	std::unordered_map<std::string, std::vector<LevelStartingLocation>> m_LevelStartingLocations;
 	std::unordered_map<std::string, std::string> m_LevelLastLocations;

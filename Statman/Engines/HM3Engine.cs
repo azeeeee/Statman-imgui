@@ -153,6 +153,12 @@ namespace Statman.Engines
                 if (Reader == null)
                     return false;
 
+                // The injected module also knows whether a non-normal time
+                // multiplier was produced by the game itself (the dying slow
+                // motion), so prefer its verdict when it is available.
+                if (m_HasCheatsActiveFromModule)
+                    return m_CheatsActiveFromModule;
+
                 var s_Base = GameModuleBase != IntPtr.Zero ? GameModuleBase.ToInt32() : 0x00400000;
 
                 byte[] ReadRva(int p_Rva, int p_Count)
@@ -241,6 +247,12 @@ namespace Statman.Engines
         private Injector m_Injector;
 
         private uint m_SkipUpdates;
+
+        // Authoritative cheat state reported by the injected module. The module
+        // knows which time-scale changes came from the game itself (the dying
+        // slow motion), which this side cannot detect on its own.
+        private volatile bool m_CheatsActiveFromModule;
+        private volatile bool m_HasCheatsActiveFromModule;
 
         // The game is a Steam DRM packed executable that decrypts itself on startup.
         // Injecting before that finishes can corrupt the process, so wait until the
@@ -865,7 +877,10 @@ namespace Statman.Engines
                 case "HI":
                 {
                     // Received hello. Send relevant configuration messages.
-                    
+
+                    // A new injection means the previous module state is gone.
+                    m_HasCheatsActiveFromModule = false;
+
                     // Send Hitman 2016 data.
                     ReloadHitman2016Data();
 
@@ -975,6 +990,13 @@ namespace Statman.Engines
                 case "RL":
                 {
                     ReloadHitman2016Data();
+                    break;
+                }
+
+                case "CA":
+                {
+                    m_CheatsActiveFromModule = p_Data == "true";
+                    m_HasCheatsActiveFromModule = true;
                     break;
                 }
             }

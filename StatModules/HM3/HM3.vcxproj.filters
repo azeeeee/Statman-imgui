@@ -80,6 +80,9 @@
     <ClCompile Include="Src\Entry.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Src\HM3\Hooks\ZSysInterface_SetTimeMultiplier.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Src\HM3\Hooks\LoadScene.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

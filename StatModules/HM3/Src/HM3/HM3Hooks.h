@@ -45,6 +45,7 @@ public:
 	DECLARE_THISCALL_HOOK(void, ZScene_Load, ZScene* th, const char* scene);
 	DECLARE_THISCALL_HOOK(void, ZHM3LevelControl_FrameUpdate, ZHM3LevelControl* th);
 	DECLARE_THISCALL_HOOK(int, ZHM3LevelControl_MissionCompleted2, ZHM3LevelControl* th);
+	DECLARE_THISCALL_HOOK(float, ZSysInterface_SetTimeMultiplier, void* th, float p_Value);
 	DECLARE_THISCALL_HOOK(void, ZLimitSaves_Click, ZLimitSaves* th, eZWUserEvents a2, int a3, ZXMLGUISystem* a4);
 	DECLARE_THISCALL_HOOK(void, ZWINDOWS_Update, void* th);
 	DECLARE_STDCALL_HOOK(HRESULT, IDirect3DDevice9__EndScene, IDirect3DDevice9* th);

@@ -12,6 +12,7 @@
 #include <sstream>
 #include <filesystem>
 #include <algorithm>
+#include <cmath>
 
 #include "Utils.h"
 
@@ -270,6 +271,13 @@ bool HM3Module::CheatsActive() const
 
 	const CheatState s_State = GetCheatState();
 
+	// The game's own slow motion (dying / last stand) animates the time
+	// multiplier down to 0.2 and back up. Only report a cheat when the live
+	// value differs from the value the game itself wrote last.
+	const bool s_TimeMultiplierOverridden =
+		(s_State.TimeMultiplier < 0.999f || s_State.TimeMultiplier > 1.001f)
+		&& std::fabs(s_State.TimeMultiplier - m_GameTimeMultiplier.load(std::memory_order_relaxed)) > 0.0005f;
+
 	return s_State.EnableCheats
 		|| s_State.InfAmmo
 		|| s_State.InfClip
@@ -277,8 +285,12 @@ bool HM3Module::CheatsActive() const
 		|| s_State.InvisibleMode
 		|| s_State.ShowEnemyVision
 		|| !s_State.ShowOSD
-		|| s_State.TimeMultiplier < 0.999f
-		|| s_State.TimeMultiplier > 1.001f;
+		|| s_TimeMultiplierOverridden;
+}
+
+void HM3Module::SetGameTimeMultiplier(float p_Value)
+{
+	m_GameTimeMultiplier.store(p_Value, std::memory_order_relaxed);
 }
 
 bool HM3Module::ApplyStartingLocation(const LevelStartingLocation& p_Location)

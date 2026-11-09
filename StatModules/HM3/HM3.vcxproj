@@ -131,6 +131,7 @@
     <ClCompile Include="Src\HM3\Hooks\ZHM3LevelControl_MissionCompleted2.cpp" />
     <ClCompile Include="Src\HM3\Hooks\ZScene_Load.cpp" />
     <ClCompile Include="Src\HM3\Hooks\ZLimitSaves_Click.cpp" />
+    <ClCompile Include="Src\HM3\Hooks\ZSysInterface_SetTimeMultiplier.cpp" />
     <ClCompile Include="Src\HM3\Hooks\ZHM3LevelControl_FrameUpdate.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
